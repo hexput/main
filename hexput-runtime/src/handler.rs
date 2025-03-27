@@ -345,7 +345,6 @@ async fn execute_program(
 ) -> ExecutionResult {
     let mut context = ExecutionContext::new();
     
-    // Initialize context with predefined variables
     for (name, value) in context_variables {
         context.set_variable(name, value);
     }
@@ -1069,7 +1068,16 @@ async fn evaluate_expression(
 
                     match timeout(Duration::from_secs(600), rx).await {
                         Ok(response_result) => match response_result {
-                            Ok(response) => Ok(response.result),
+                            Ok(response) => {
+                                if let Some(err) = response.error {
+                                    Err(RuntimeError::with_location(
+                                        format!("Remote function error: {}", err),
+                                        location,
+                                    ))
+                                } else {
+                                    Ok(response.result)
+                                }
+                            },
                             Err(_) => Err(RuntimeError::with_location(
                                 "Function call response channel closed".to_string(),
                                 location,
@@ -1686,7 +1694,16 @@ async fn evaluate_expression(
 
             match timeout(Duration::from_secs(600), rx).await {
                 Ok(response_result) => match response_result {
-                    Ok(response) => Ok(response.result),
+                    Ok(response) => {
+                        if let Some(err) = response.error {
+                            Err(RuntimeError::with_location(
+                                format!("Remote method error: {}", err),
+                                location,
+                            ))
+                        } else {
+                            Ok(response.result)
+                        }
+                    },
                     Err(_) => Err(RuntimeError::with_location(
                         "Function call response channel closed".to_string(),
                         location,

@@ -91,6 +91,8 @@ pub struct FunctionCallRequest {
 pub struct FunctionCallResponse {
     pub id: String,
     pub result: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
