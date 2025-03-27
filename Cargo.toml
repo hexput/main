@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = [
+    "hexput-ast-api",
+    "hexput-ast-cli",
+    "hexput-runtime"
+]
