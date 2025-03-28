@@ -185,6 +185,33 @@ fn execute_string_method(
                 )),
             }
         }
+        "replace" => {
+            if args.len() != 2 {
+                return Err(RuntimeError::with_location(
+                    format!("String.replace expects 2 arguments, got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            let old = match &args[0] {
+                Value::String(s) => s,
+                _ => return Err(RuntimeError::with_location(
+                    "String.replace expects a string argument".to_string(),
+                    location.clone(),
+                )),
+            };
+            
+            let new = match &args[1] {
+                Value::String(s) => s,
+                _ => return Err(RuntimeError::with_location(
+                    "String.replace expects a string argument".to_string(),
+                    location.clone(),
+                )),
+            };
+            
+            let result = string.replace(old, new);
+            Ok(Some(Value::String(result)))
+        }
         _ => Ok(None), 
     }
 }
