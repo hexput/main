@@ -66,9 +66,9 @@ impl ExecutionContext {
         self.callbacks.insert(callback.name.clone(), callback);
     }
 
-    fn to_json(&self) -> serde_json::Value {
-        serde_json::json!(self.variables)
-    }
+    // fn to_json(&self) -> serde_json::Value {
+    //     serde_json::json!(self.variables)
+    // }
 
     fn clone(&self) -> Self {
         Self {
@@ -390,7 +390,7 @@ async fn execute_program(
     }
 
     ExecutionResult {
-        value: context.to_json(),
+        value: serde_json::Value::Null,
         error: None,
     }
 }

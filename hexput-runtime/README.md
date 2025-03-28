@@ -26,7 +26,7 @@ git clone https://github.com/hexput/main hexput-main
 cd hexput-main
 
 # Build the project
-cargo build --r -p hexput-runtime
+cargo build -r -p hexput-runtime
 
 # Run the server
 ./target/release/hexput-runtime
