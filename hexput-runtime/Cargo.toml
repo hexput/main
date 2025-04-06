@@ -3,6 +3,9 @@ name = "hexput-runtime"
 version = "0.1.0"
 edition = "2021"
 description = "WebSocket runtime server for Hexput AST processing"
+license = "MIT"
+keywords = ["hexput", "ast", "parsing", "runtime", "websocket"]
+categories = ["parsing", "language", "input"]
 
 [dependencies]
 hexput-ast-api = { version = "0.1.0" }
