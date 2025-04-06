@@ -323,7 +323,7 @@ async fn handle_execute_request(
                 Some(error_text.clone())
             }
         }
-        None => None,
+        _ => None,
     };
 
     let response = WebSocketResponse {

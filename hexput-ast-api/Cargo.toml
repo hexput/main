@@ -2,7 +2,11 @@
 name = "hexput-ast-api"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/hexput/main"
+license = "MIT"
+keywords = ["hexput", "ast", "parsing"]
 description = "Core AST parsing and processing library"
+categories = ["parsing", "development-tools::procedural-macro"]
 
 [dependencies]
 logos = "0.15.0"
