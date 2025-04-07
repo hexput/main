@@ -4,7 +4,9 @@ pub mod messages;
 pub mod server;
 pub mod builtins;
 
-use clap::Parser;
+use std::vec;
+
+use clap::{builder::Str, Parser};
 use tracing::info;
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
@@ -26,6 +28,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+
     let args = Args::parse();
     
     let log_level_str = std::env::var("RUST_LOG").unwrap_or_else(|_| {
