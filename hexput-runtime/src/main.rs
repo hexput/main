@@ -4,9 +4,7 @@ pub mod messages;
 pub mod server;
 pub mod builtins;
 
-use std::vec;
-
-use clap::{builder::Str, Parser};
+use clap::Parser;
 use tracing::info;
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
