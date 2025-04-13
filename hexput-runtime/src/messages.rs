@@ -49,6 +49,8 @@ pub struct WebSocketRequest {
     pub options: AstParserOptions,
     #[serde(default)]
     pub context: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_context: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -85,6 +87,8 @@ pub struct FunctionCallRequest {
     pub id: String,
     pub function_name: String,
     pub arguments: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_context: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

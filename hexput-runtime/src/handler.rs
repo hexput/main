@@ -66,10 +66,6 @@ impl ExecutionContext {
         self.callbacks.insert(callback.name.clone(), callback);
     }
 
-    // fn to_json(&self) -> serde_json::Value {
-    //     serde_json::json!(self.variables)
-    // }
-
     fn clone(&self) -> Self {
         Self {
             variables: self.variables.clone(),
@@ -281,6 +277,7 @@ async fn handle_execute_request(
     let options = request.options.clone();
     let id = request.id.clone();
     let context_variables = request.context.clone();
+    let secret_context = request.secret_context.clone();
 
     let parse_start_time = Instant::now();
     
@@ -310,7 +307,7 @@ async fn handle_execute_request(
     let exec_start_time = Instant::now();
     
     let execution_result =
-        execute_program(program, context_variables, function_calls, function_validations, send_message).await;
+        execute_program(program, context_variables, secret_context, function_calls, function_validations, send_message).await;
     
     let exec_elapsed = exec_start_time.elapsed();
     debug!("Program execution completed in {:.2?}", exec_elapsed);
@@ -339,6 +336,7 @@ async fn handle_execute_request(
 async fn execute_program(
     program: hexput_ast_api::ast_structs::Program,
     context_variables: serde_json::Map<String, serde_json::Value>,
+    secret_context: Option<serde_json::Value>,
     function_calls: PendingFunctionCalls,
     function_validations: PendingFunctionValidations,
     send_message: impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
@@ -353,6 +351,7 @@ async fn execute_program(
         match Box::pin(execute_statement(
             statement,
             &mut context,
+            secret_context.as_ref(),
             function_calls.clone(),
             function_validations.clone(),
             &send_message,
@@ -423,6 +422,7 @@ fn extract_return_value(value: serde_json::Value) -> serde_json::Value {
 async fn execute_statement(
     statement: hexput_ast_api::ast_structs::Statement,
     context: &mut ExecutionContext,
+    secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
     function_validations: PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
@@ -444,6 +444,7 @@ async fn execute_statement(
             let value_result = match Box::pin(evaluate_expression(
                 value,
                 context,
+                secret_context,
                 function_calls,
                 function_validations,
                 send_message,
@@ -460,6 +461,7 @@ async fn execute_statement(
             match Box::pin(evaluate_expression(
                 expression,
                 context,
+                secret_context,
                 function_calls,
                 function_validations,
                 send_message,
@@ -479,6 +481,7 @@ async fn execute_statement(
             let condition_value = match Box::pin(evaluate_expression(
                 condition,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -502,6 +505,7 @@ async fn execute_statement(
                 match execute_block(
                     body,
                     context,
+                    secret_context,
                     function_calls,
                     function_validations,
                     send_message,
@@ -515,6 +519,7 @@ async fn execute_statement(
                 match execute_block(
                     else_block,
                     context,
+                    secret_context,
                     function_calls,
                     function_validations,
                     send_message,
@@ -532,6 +537,7 @@ async fn execute_statement(
             execute_block(
                 block,
                 context,
+                secret_context,
                 function_calls,
                 function_validations,
                 send_message,
@@ -547,6 +553,7 @@ async fn execute_statement(
             let iterable_value = match Box::pin(evaluate_expression(
                 iterable,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -565,6 +572,7 @@ async fn execute_statement(
                         match execute_block(
                             body.clone(),
                             context,
+                            secret_context,
                             function_calls.clone(),
                             function_validations.clone(),
                             send_message,
@@ -605,6 +613,7 @@ async fn execute_statement(
                         let result = execute_block(
                             body.clone(),
                             context,
+                            secret_context,
                             function_calls.clone(),
                             function_validations.clone(),
                             send_message,
@@ -668,6 +677,7 @@ async fn execute_statement(
             let return_value = Box::pin(evaluate_expression(
                 value,
                 context,
+                secret_context,
                 function_calls,
                 function_validations,
                 send_message,
@@ -715,6 +725,7 @@ fn add_location_if_needed(
 async fn execute_block(
     block: hexput_ast_api::ast_structs::Block,
     context: &mut ExecutionContext,
+    secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
     function_validations: PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
@@ -723,6 +734,7 @@ async fn execute_block(
         let statement_future = Box::pin(execute_statement(
             statement,
             context,
+            secret_context,
             function_calls.clone(),
             function_validations.clone(),
             send_message,
@@ -742,6 +754,7 @@ async fn execute_block(
 async fn extract_property_path(
     expression: &hexput_ast_api::ast_structs::Expression,
     context: &mut ExecutionContext,
+    secret_context: Option<&serde_json::Value>,
     function_calls: &PendingFunctionCalls,
     function_validations: &PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
@@ -776,6 +789,7 @@ async fn extract_property_path(
                     let prop_value = Box::pin(evaluate_expression(
                         (**prop_expr).clone(),
                         context,
+                        secret_context,
                         function_calls.clone(),
                         function_validations.clone(),
                         send_message,
@@ -910,6 +924,7 @@ fn update_nested_object(
 async fn evaluate_expression(
     expression: hexput_ast_api::ast_structs::Expression,
     context: &mut ExecutionContext,
+    secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
     function_validations: PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
@@ -954,6 +969,7 @@ async fn evaluate_expression(
                     callback,
                     arguments,
                     context,
+                    secret_context,
                     function_calls,
                     function_validations,
                     send_message,
@@ -1027,6 +1043,7 @@ async fn evaluate_expression(
                         match Box::pin(evaluate_expression(
                             arg,
                             context,
+                            secret_context,
                             function_calls.clone(),
                             function_validations.clone(),
                             send_message,
@@ -1049,6 +1066,7 @@ async fn evaluate_expression(
                         id: call_id.clone(),
                         function_name: callee.clone(),
                         arguments: evaluated_args,
+                        secret_context: secret_context.cloned(),
                     };
 
                     let request_json = match serde_json::to_string(&request) {
@@ -1114,6 +1132,7 @@ async fn evaluate_expression(
             let left_value = match Box::pin(evaluate_expression(
                 *left,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1127,6 +1146,7 @@ async fn evaluate_expression(
             let right_value = match Box::pin(evaluate_expression(
                 *right,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1302,6 +1322,7 @@ async fn evaluate_expression(
             let operand_value = match Box::pin(evaluate_expression(
                 *operand,
                 context,
+                secret_context,
                 function_calls,
                 function_validations,
                 send_message,
@@ -1337,6 +1358,7 @@ async fn evaluate_expression(
             let obj_value = match Box::pin(evaluate_expression(
                 *object,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1379,6 +1401,7 @@ async fn evaluate_expression(
                 let prop_value = match Box::pin(evaluate_expression(
                     *prop_expr,
                     context,
+                    secret_context,
                     function_calls.clone(),
                     function_validations.clone(),
                     send_message,
@@ -1471,6 +1494,7 @@ async fn evaluate_expression(
                 let value = match Box::pin(evaluate_expression(
                     element,
                     context,
+                    secret_context,
                     function_calls.clone(),
                     function_validations.clone(),
                     send_message,
@@ -1493,6 +1517,7 @@ async fn evaluate_expression(
                 let value = match Box::pin(evaluate_expression(
                     property.value,
                     context,
+                    secret_context,
                     function_calls.clone(),
                     function_validations.clone(),
                     send_message,
@@ -1519,6 +1544,7 @@ async fn evaluate_expression(
             let obj = match Box::pin(evaluate_expression(
                 *object,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1542,6 +1568,7 @@ async fn evaluate_expression(
                 let prop_value = match Box::pin(evaluate_expression(
                     *prop_expr,
                     context,
+                    secret_context,
                     function_calls.clone(),
                     function_validations.clone(),
                     send_message,
@@ -1573,6 +1600,7 @@ async fn evaluate_expression(
                 let value = match Box::pin(evaluate_expression(
                     arg,
                     context,
+                    secret_context,
                     function_calls.clone(),
                     function_validations.clone(),
                     send_message,
@@ -1675,6 +1703,7 @@ async fn evaluate_expression(
                 id: call_id.clone(),
                 function_name: method_name.clone(),
                 arguments: call_args,
+                secret_context: secret_context.cloned(),
             };
 
             let request_json = match serde_json::to_string(&request) {
@@ -1727,6 +1756,7 @@ async fn evaluate_expression(
             let evaluated_value = match Box::pin(evaluate_expression(
                 *value,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1752,6 +1782,7 @@ async fn evaluate_expression(
             let value_to_assign = match Box::pin(evaluate_expression(
                 *value,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1775,6 +1806,7 @@ async fn evaluate_expression(
                 let prop_value = match Box::pin(evaluate_expression(
                     *prop_expr,
                     context,
+                    secret_context,
                     function_calls.clone(),
                     function_validations.clone(),
                     send_message,
@@ -1854,6 +1886,7 @@ async fn evaluate_expression(
                     let property_path = match Box::pin(extract_property_path(
                         &*object,
                         context,
+                        secret_context,
                         &function_calls,
                         &function_validations,
                         send_message,
@@ -1898,6 +1931,7 @@ async fn evaluate_expression(
                     let mut obj_value = match Box::pin(evaluate_expression(
                         *object,
                         context,
+                        secret_context,
                         function_calls.clone(),
                         function_validations.clone(),
                         send_message,
@@ -1938,6 +1972,7 @@ async fn evaluate_expression(
             let obj_value = match Box::pin(evaluate_expression(
                 *object,
                 context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -1996,6 +2031,7 @@ async fn execute_callback(
     callback: CallbackFunction,
     arguments: Vec<hexput_ast_api::ast_structs::Expression>,
     parent_context: &mut ExecutionContext,
+    secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
     function_validations: PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
@@ -2016,6 +2052,7 @@ async fn execute_callback(
             let arg_value = Box::pin(evaluate_expression(
                 arguments[i].clone(),
                 parent_context,
+                secret_context,
                 function_calls.clone(),
                 function_validations.clone(),
                 send_message,
@@ -2029,6 +2066,7 @@ async fn execute_callback(
     let result = execute_block(
         callback.body,
         &mut callback_context,
+        secret_context,
         function_calls,
         function_validations,
         send_message,
