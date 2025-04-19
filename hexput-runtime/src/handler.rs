@@ -1152,177 +1152,259 @@ async fn evaluate_expression(
                 Err(e) => return Err(add_location_if_needed(e, &location)),
             };
 
-            let right_value = match Box::pin(evaluate_expression(
-                *right,
-                context,
-                secret_context,
-                function_calls.clone(),
-                function_validations.clone(),
-                send_message,
-            ))
-            .await
-            {
-                Ok(val) => val,
-                Err(e) => return Err(add_location_if_needed(e, &location)),
-            };
-
             match operator {
-                Operator::Plus => match (left_value, right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let result = l.as_f64().unwrap_or(0.0) + r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Number(
-                            serde_json::Number::from_f64(result)
-                                .unwrap_or(serde_json::Number::from(0)),
-                        ))
+                Operator::And => {
+                    let is_left_truthy = match &left_value {
+                        serde_json::Value::Bool(b) => *b,
+                        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                        serde_json::Value::String(s) => !s.is_empty(),
+                        serde_json::Value::Array(a) => !a.is_empty(),
+                        serde_json::Value::Object(o) => !o.is_empty(),
+                        serde_json::Value::Null => false,
+                    };
+
+                    if !is_left_truthy {
+                        return Ok(serde_json::Value::Bool(false));
                     }
 
-                    (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                        Ok(serde_json::Value::String(l + &r))
+                    let right_value = match Box::pin(evaluate_expression(
+                        *right,
+                        context,
+                        secret_context,
+                        function_calls.clone(),
+                        function_validations.clone(),
+                        send_message,
+                    ))
+                    .await
+                    {
+                        Ok(val) => val,
+                        Err(e) => return Err(add_location_if_needed(e, &location)),
+                    };
+
+                    let is_right_truthy = match &right_value {
+                        serde_json::Value::Bool(b) => *b,
+                        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                        serde_json::Value::String(s) => !s.is_empty(),
+                        serde_json::Value::Array(a) => !a.is_empty(),
+                        serde_json::Value::Object(o) => !o.is_empty(),
+                        serde_json::Value::Null => false,
+                    };
+
+                    Ok(serde_json::Value::Bool(is_right_truthy))
+                }
+                Operator::Or => {
+                    let is_left_truthy = match &left_value {
+                        serde_json::Value::Bool(b) => *b,
+                        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                        serde_json::Value::String(s) => !s.is_empty(),
+                        serde_json::Value::Array(a) => !a.is_empty(),
+                        serde_json::Value::Object(o) => !o.is_empty(),
+                        serde_json::Value::Null => false,
+                    };
+
+                    if is_left_truthy {
+                        return Ok(serde_json::Value::Bool(true));
                     }
 
-                    (serde_json::Value::String(l), serde_json::Value::Number(r)) => {
-                        let r_str = if r.is_i64() {
-                            r.as_i64().unwrap().to_string()
-                        } else if r.is_u64() {
-                            r.as_u64().unwrap().to_string()
-                        } else {
-                            r.as_f64().unwrap_or(0.0).to_string()
-                        };
-                        Ok(serde_json::Value::String(l + &r_str))
-                    }
+                    let right_value = match Box::pin(evaluate_expression(
+                        *right,
+                        context,
+                        secret_context,
+                        function_calls.clone(),
+                        function_validations.clone(),
+                        send_message,
+                    ))
+                    .await
+                    {
+                        Ok(val) => val,
+                        Err(e) => return Err(add_location_if_needed(e, &location)),
+                    };
 
-                    (serde_json::Value::Number(l), serde_json::Value::String(r)) => {
-                        let l_str = if l.is_i64() {
-                            l.as_i64().unwrap().to_string()
-                        } else if l.is_u64() {
-                            l.as_u64().unwrap().to_string()
-                        } else {
-                            l.as_f64().unwrap_or(0.0).to_string()
-                        };
-                        Ok(serde_json::Value::String(l_str + &r))
-                    }
+                    let is_right_truthy = match &right_value {
+                        serde_json::Value::Bool(b) => *b,
+                        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                        serde_json::Value::String(s) => !s.is_empty(),
+                        serde_json::Value::Array(a) => !a.is_empty(),
+                        serde_json::Value::Object(o) => !o.is_empty(),
+                        serde_json::Value::Null => false,
+                    };
 
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for addition".to_string(),
-                        location,
-                    )),
-                },
+                    Ok(serde_json::Value::Bool(is_right_truthy))
+                }
+                _ => {
+                    let right_value = match Box::pin(evaluate_expression(
+                        *right,
+                        context,
+                        secret_context,
+                        function_calls.clone(),
+                        function_validations.clone(),
+                        send_message,
+                    ))
+                    .await
+                    {
+                        Ok(val) => val,
+                        Err(e) => return Err(add_location_if_needed(e, &location)),
+                    };
 
-                Operator::Equal => match (&left_value, &right_value) {
-                    (serde_json::Value::Null, serde_json::Value::Null) => {
-                        Ok(serde_json::Value::Bool(true))
-                    }
-                    (serde_json::Value::Bool(l), serde_json::Value::Bool(r)) => {
-                        Ok(serde_json::Value::Bool(l == r))
-                    }
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let l_f64 = l.as_f64().unwrap_or(0.0);
-                        let r_f64 = r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Bool(
-                            (l_f64 - r_f64).abs() < f64::EPSILON,
-                        ))
-                    }
-                    (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                        Ok(serde_json::Value::Bool(l == r))
-                    }
+                    match operator {
+                        Operator::Plus => match (left_value, right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let result = l.as_f64().unwrap_or(0.0) + r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Number(
+                                    serde_json::Number::from_f64(result)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                ))
+                            }
 
-                    _ => Ok(serde_json::Value::Bool(false)),
-                },
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::String(l + &r))
+                            }
 
-                Operator::Less => match (&left_value, &right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let l_f64 = l.as_f64().unwrap_or(0.0);
-                        let r_f64 = r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Bool(l_f64 < r_f64))
-                    }
-                    (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                        Ok(serde_json::Value::Bool(l < r))
-                    }
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for less than comparison".to_string(),
-                        location,
-                    )),
-                },
+                            (serde_json::Value::String(l), serde_json::Value::Number(r)) => {
+                                let r_str = if r.is_i64() {
+                                    r.as_i64().unwrap().to_string()
+                                } else if r.is_u64() {
+                                    r.as_u64().unwrap().to_string()
+                                } else {
+                                    r.as_f64().unwrap_or(0.0).to_string()
+                                };
+                                Ok(serde_json::Value::String(l + &r_str))
+                            }
 
-                Operator::Greater => match (&left_value, &right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let l_f64 = l.as_f64().unwrap_or(0.0);
-                        let r_f64 = r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Bool(l_f64 > r_f64))
-                    }
-                    (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                        Ok(serde_json::Value::Bool(l > r))
-                    }
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for greater than comparison".to_string(),
-                        location,
-                    )),
-                },
+                            (serde_json::Value::Number(l), serde_json::Value::String(r)) => {
+                                let l_str = if l.is_i64() {
+                                    l.as_i64().unwrap().to_string()
+                                } else if l.is_u64() {
+                                    l.as_u64().unwrap().to_string()
+                                } else {
+                                    l.as_f64().unwrap_or(0.0).to_string()
+                                };
+                                Ok(serde_json::Value::String(l_str + &r))
+                            }
 
-                Operator::GreaterEqual => match (&left_value, &right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let l_f64 = l.as_f64().unwrap_or(0.0);
-                        let r_f64 = r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Bool(l_f64 >= r_f64))
-                    }
-                    (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                        Ok(serde_json::Value::Bool(l >= r))
-                    }
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for greater than or equal comparison".to_string(),
-                        location,
-                    )),
-                },
-
-                Operator::LessEqual => match (&left_value, &right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let l_f64 = l.as_f64().unwrap_or(0.0);
-                        let r_f64 = r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Bool(l_f64 <= r_f64))
-                    }
-                    (serde_json::Value::String(l), serde_json::Value::String(r)) => {
-                        Ok(serde_json::Value::Bool(l <= r))
-                    }
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for less than or equal comparison".to_string(),
-                        location,
-                    )),
-                },
-
-                Operator::Multiply => match (&left_value, &right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let result = l.as_f64().unwrap_or(0.0) * r.as_f64().unwrap_or(0.0);
-                        Ok(serde_json::Value::Number(
-                            serde_json::Number::from_f64(result)
-                                .unwrap_or(serde_json::Number::from(0)),
-                        ))
-                    }
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for multiplication".to_string(),
-                        location,
-                    )),
-                },
-
-                Operator::Divide => match (&left_value, &right_value) {
-                    (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
-                        let r_f64 = r.as_f64().unwrap_or(0.0);
-                        if r_f64 == 0.0 {
-                            return Err(RuntimeError::with_location(
-                                "Division by zero".to_string(),
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for addition".to_string(),
                                 location,
-                            ));
-                        }
-                        let result = l.as_f64().unwrap_or(0.0) / r_f64;
-                        Ok(serde_json::Value::Number(
-                            serde_json::Number::from_f64(result)
-                                .unwrap_or(serde_json::Number::from(0)),
-                        ))
+                            )),
+                        },
+
+                        Operator::Equal => match (&left_value, &right_value) {
+                            (serde_json::Value::Null, serde_json::Value::Null) => {
+                                Ok(serde_json::Value::Bool(true))
+                            }
+                            (serde_json::Value::Bool(l), serde_json::Value::Bool(r)) => {
+                                Ok(serde_json::Value::Bool(l == r))
+                            }
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let l_f64 = l.as_f64().unwrap_or(0.0);
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Bool(
+                                    (l_f64 - r_f64).abs() < f64::EPSILON,
+                                ))
+                            }
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::Bool(l == r))
+                            }
+
+                            _ => Ok(serde_json::Value::Bool(false)),
+                        },
+
+                        Operator::Less => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let l_f64 = l.as_f64().unwrap_or(0.0);
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Bool(l_f64 < r_f64))
+                            }
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::Bool(l < r))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for less than comparison".to_string(),
+                                location,
+                            )),
+                        },
+
+                        Operator::Greater => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let l_f64 = l.as_f64().unwrap_or(0.0);
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Bool(l_f64 > r_f64))
+                            }
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::Bool(l > r))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for greater than comparison".to_string(),
+                                location,
+                            )),
+                        },
+
+                        Operator::GreaterEqual => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let l_f64 = l.as_f64().unwrap_or(0.0);
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Bool(l_f64 >= r_f64))
+                            }
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::Bool(l >= r))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for greater than or equal comparison".to_string(),
+                                location,
+                            )),
+                        },
+
+                        Operator::LessEqual => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let l_f64 = l.as_f64().unwrap_or(0.0);
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Bool(l_f64 <= r_f64))
+                            }
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::Bool(l <= r))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for less than or equal comparison".to_string(),
+                                location,
+                            )),
+                        },
+
+                        Operator::Multiply => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let result = l.as_f64().unwrap_or(0.0) * r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Number(
+                                    serde_json::Number::from_f64(result)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                ))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for multiplication".to_string(),
+                                location,
+                            )),
+                        },
+
+                        Operator::Divide => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                if r_f64 == 0.0 {
+                                    return Err(RuntimeError::with_location(
+                                        "Division by zero".to_string(),
+                                        location,
+                                    ));
+                                }
+                                let result = l.as_f64().unwrap_or(0.0) / r_f64;
+                                Ok(serde_json::Value::Number(
+                                    serde_json::Number::from_f64(result)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                ))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for division".to_string(),
+                                location,
+                            )),
+                        },
                     }
-                    _ => Err(RuntimeError::with_location(
-                        "Invalid operand types for division".to_string(),
-                        location,
-                    )),
-                },
+                }
             }
         }
         Expression::UnaryExpression {

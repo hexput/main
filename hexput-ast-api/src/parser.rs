@@ -378,7 +378,7 @@ impl<'a> Parser<'a> {
 
     fn parse_assignment(&mut self) -> Result<Expression, ParseError> {
         let start_location = self.current_location();
-        let expr = self.parse_equality()?;
+        let expr = self.parse_logical_or()?;
         
         if let Some(token_with_span) = self.current_token {
             if token_with_span.token == Token::Equal {
@@ -387,7 +387,7 @@ impl<'a> Parser<'a> {
                 }
                 
                 self.advance();
-                let value = self.parse_equality()?;
+                let value = self.parse_logical_or()?;
                 let end_location = get_expr_location!(value);
                 
                 let location = SourceLocation::new(
@@ -422,6 +422,70 @@ impl<'a> Parser<'a> {
                 return Ok(new_expr);
             }
         }
+        Ok(expr)
+    }
+
+    fn parse_logical_or(&mut self) -> Result<Expression, ParseError> {
+        let start_location = self.current_location();
+        let mut expr = self.parse_logical_and()?;
+        
+        while let Some(token_with_span) = self.current_token {
+            match &token_with_span.token {
+                Token::Or => {
+                    self.advance();
+                    let right = self.parse_logical_and()?;
+                    let right_loc = get_expr_location!(right);
+                    
+                    let location = SourceLocation::new(
+                        start_location.start_line,
+                        start_location.start_column,
+                        right_loc.end_line,
+                        right_loc.end_column
+                    );
+                    
+                    expr = Expression::BinaryExpression {
+                        left: Box::new(expr),
+                        operator: Operator::Or,
+                        right: Box::new(right),
+                        location,
+                    };
+                }
+                _ => break,
+            }
+        }
+        
+        Ok(expr)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<Expression, ParseError> {
+        let start_location = self.current_location();
+        let mut expr = self.parse_equality()?;
+        
+        while let Some(token_with_span) = self.current_token {
+            match &token_with_span.token {
+                Token::And => {
+                    self.advance();
+                    let right = self.parse_equality()?;
+                    let right_loc = get_expr_location!(right);
+                    
+                    let location = SourceLocation::new(
+                        start_location.start_line,
+                        start_location.start_column,
+                        right_loc.end_line,
+                        right_loc.end_column
+                    );
+                    
+                    expr = Expression::BinaryExpression {
+                        left: Box::new(expr),
+                        operator: Operator::And,
+                        right: Box::new(right),
+                        location,
+                    };
+                }
+                _ => break,
+            }
+        }
+        
         Ok(expr)
     }
 

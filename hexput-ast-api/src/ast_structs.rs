@@ -281,6 +281,8 @@ pub enum Operator {
     Less,
     GreaterEqual,
     LessEqual,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

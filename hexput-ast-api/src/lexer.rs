@@ -79,6 +79,13 @@ pub enum Token {
     #[token("/", priority = 1)]
     Divide,
     
+    // Logical operators
+    #[token("&&")]
+    And,
+    
+    #[token("||")]
+    Or,
+    
     // Comparators
     #[token(">=")]
     GreaterEqual,
