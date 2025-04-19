@@ -2,6 +2,8 @@ use crate::error::RuntimeError;
 use hexput_ast_api::ast_structs::SourceLocation;
 use serde_json::{Map, Value};
 
+const FORBIDDEN_KEY: &str = "secret_data";
+
 pub fn execute_builtin_method(
     object: &Value,
     method_name: &str,
@@ -366,11 +368,12 @@ fn execute_object_method(
                     location.clone(),
                 ));
             }
-            
+
             let keys: Vec<Value> = object.keys()
+                .filter(|&k| k != FORBIDDEN_KEY) // Filter out the forbidden key
                 .map(|k| Value::String(k.clone()))
                 .collect();
-                
+
             Ok(Some(Value::Array(keys)))
         }
         "values" => {
@@ -380,8 +383,11 @@ fn execute_object_method(
                     location.clone(),
                 ));
             }
-            
-            let values: Vec<Value> = object.values().cloned().collect();
+
+            let values: Vec<Value> = object.iter()
+                .filter(|(k, _)| *k != FORBIDDEN_KEY) // Filter out the forbidden key's value
+                .map(|(_, v)| v.clone())
+                .collect();
             Ok(Some(Value::Array(values)))
         }
         "isEmpty" => {
@@ -391,8 +397,9 @@ fn execute_object_method(
                     location.clone(),
                 ));
             }
-            
-            Ok(Some(Value::Bool(object.is_empty())))
+            // Consider the object empty if it only contains the forbidden key
+            let is_effectively_empty = object.iter().all(|(k, _)| k == FORBIDDEN_KEY);
+            Ok(Some(Value::Bool(is_effectively_empty)))
         }
         "has" => {
             if args.len() != 1 {
@@ -401,9 +408,15 @@ fn execute_object_method(
                     location.clone(),
                 ));
             }
-            
+
             match &args[0] {
-                Value::String(key) => Ok(Some(Value::Bool(object.contains_key(key)))),
+                Value::String(key) => {
+                    if key == FORBIDDEN_KEY {
+                        Ok(Some(Value::Bool(false))) // Never report forbidden key as present
+                    } else {
+                        Ok(Some(Value::Bool(object.contains_key(key))))
+                    }
+                },
                 _ => Err(RuntimeError::with_location(
                     format!("Object.{} expects a string argument", method_name),
                     location.clone(),
@@ -417,8 +430,9 @@ fn execute_object_method(
                     location.clone(),
                 ));
             }
-            
+
             let entries: Vec<Value> = object.iter()
+                .filter(|(k, _)| *k != FORBIDDEN_KEY) // Filter out the forbidden entry
                 .map(|(k, v)| {
                     Value::Array(vec![
                         Value::String(k.clone()),
@@ -426,7 +440,7 @@ fn execute_object_method(
                     ])
                 })
                 .collect();
-                
+
             Ok(Some(Value::Array(entries)))
         }
         _ => Ok(None), 

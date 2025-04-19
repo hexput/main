@@ -19,6 +19,8 @@ type PendingFunctionCalls = Arc<Mutex<HashMap<String, oneshot::Sender<FunctionCa
 type PendingFunctionValidations =
     Arc<Mutex<HashMap<String, oneshot::Sender<FunctionExistsResponse>>>>;
 
+const FORBIDDEN_KEY: &str = "secret_data";
+
 struct ExecutionContext {
     variables: HashMap<String, serde_json::Value>,
     callbacks: HashMap<String, CallbackFunction>,
@@ -849,6 +851,13 @@ fn update_nested_object(
 
     let current_prop = &path[path_index];
 
+    if current_prop == FORBIDDEN_KEY {
+        return Err(RuntimeError::ExecutionError(format!(
+            "Access to the key '{}' is forbidden.",
+            FORBIDDEN_KEY
+        )));
+    }
+
     let is_array_index = current_prop.parse::<usize>().is_ok();
 
     if path_index == path.len() - 1 {
@@ -1371,6 +1380,12 @@ async fn evaluate_expression(
 
             if !computed {
                 if let Some(prop) = property {
+                    if prop == FORBIDDEN_KEY {
+                        return Err(RuntimeError::with_location(
+                            format!("Access to the key '{}' is forbidden.", FORBIDDEN_KEY),
+                            location,
+                        ));
+                    }
                     match &obj_value {
                         serde_json::Value::Object(map) => {
                             Ok(map.get(&prop).cloned().unwrap_or(serde_json::Value::Null))
@@ -1387,7 +1402,7 @@ async fn evaluate_expression(
                             }
                         }
                         _ => Err(RuntimeError::with_location(
-                            "Cannot access property of non-object".to_string(),
+                            "Cannot access property of non-object/non-array".to_string(),
                             location,
                         )),
                     }
@@ -1413,67 +1428,84 @@ async fn evaluate_expression(
                 };
 
                 match prop_value {
-                    serde_json::Value::String(s) => match &obj_value {
-                        serde_json::Value::Object(map) => {
-                            Ok(map.get(&s).cloned().unwrap_or(serde_json::Value::Null))
+                    serde_json::Value::String(s) => {
+                        if s == FORBIDDEN_KEY {
+                            return Err(RuntimeError::with_location(
+                                format!("Access to the key '{}' is forbidden.", FORBIDDEN_KEY),
+                                location,
+                            ));
                         }
-                        serde_json::Value::Array(arr) => {
-                            if let Ok(index) = s.parse::<usize>() {
-                                Ok(arr.get(index).cloned().unwrap_or(serde_json::Value::Null))
-                            } else {
-                                Err(RuntimeError::with_location(
-                                    format!("Invalid array index: {}", s),
-                                    location,
-                                ))
+                        match &obj_value {
+                            serde_json::Value::Object(map) => {
+                                Ok(map.get(&s).cloned().unwrap_or(serde_json::Value::Null))
                             }
+                            serde_json::Value::Array(arr) => {
+                                if let Ok(index) = s.parse::<usize>() {
+                                    Ok(arr.get(index).cloned().unwrap_or(serde_json::Value::Null))
+                                } else {
+                                    Err(RuntimeError::with_location(
+                                        format!("Invalid array index: {}", s),
+                                        location,
+                                    ))
+                                }
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Cannot access property of non-object/non-array".to_string(),
+                                location,
+                            )),
                         }
-                        _ => Err(RuntimeError::with_location(
-                            "Cannot access property of non-object/non-array".to_string(),
-                            location,
-                        )),
                     },
-                    serde_json::Value::Number(n) => match &obj_value {
-                        serde_json::Value::Array(arr) => {
-                            let index = if n.is_u64() {
-                                n.as_u64().unwrap() as usize
-                            } else if n.is_i64() {
-                                let i = n.as_i64().unwrap();
-                                if i < 0 {
-                                    return Err(RuntimeError::with_location(
-                                        "Array index cannot be negative".to_string(),
-                                        location,
-                                    ));
-                                }
-                                i as usize
-                            } else {
-                                let f = n.as_f64().unwrap();
-                                if f < 0.0 || !f.is_finite() {
-                                    return Err(RuntimeError::with_location(
-                                        "Array index must be a non-negative finite number"
-                                            .to_string(),
-                                        location,
-                                    ));
-                                }
-                                f as usize
-                            };
+                    serde_json::Value::Number(n) => {
+                        let key_str = if n.is_i64() {
+                            n.as_i64().unwrap().to_string()
+                        } else if n.is_u64() {
+                            n.as_u64().unwrap().to_string()
+                        } else {
+                            n.as_f64().unwrap_or(0.0).to_string()
+                        };
 
-                            Ok(arr.get(index).cloned().unwrap_or(serde_json::Value::Null))
+                        if key_str == FORBIDDEN_KEY {
+                             return Err(RuntimeError::with_location(
+                                format!("Access to the key '{}' is forbidden.", FORBIDDEN_KEY),
+                                location,
+                            ));
                         }
-                        serde_json::Value::Object(map) => {
-                            let key = if n.is_i64() {
-                                n.as_i64().unwrap().to_string()
-                            } else if n.is_u64() {
-                                n.as_u64().unwrap().to_string()
-                            } else {
-                                n.as_f64().unwrap_or(0.0).to_string()
-                            };
 
-                            Ok(map.get(&key).cloned().unwrap_or(serde_json::Value::Null))
+                        match &obj_value {
+                            serde_json::Value::Array(arr) => {
+                                let index = if n.is_u64() {
+                                    n.as_u64().unwrap() as usize
+                                } else if n.is_i64() {
+                                    let i = n.as_i64().unwrap();
+                                    if i < 0 {
+                                        return Err(RuntimeError::with_location(
+                                            "Array index cannot be negative".to_string(),
+                                            location,
+                                        ));
+                                    }
+                                    i as usize
+                                } else {
+                                    let f = n.as_f64().unwrap();
+                                    if f < 0.0 || !f.is_finite() {
+                                        return Err(RuntimeError::with_location(
+                                            "Array index must be a non-negative finite number"
+                                                .to_string(),
+                                            location,
+                                        ));
+                                    }
+                                    f as usize
+                                };
+
+                                Ok(arr.get(index).cloned().unwrap_or(serde_json::Value::Null))
+                            }
+                            serde_json::Value::Object(map) => {
+                                Ok(map.get(&key_str).cloned().unwrap_or(serde_json::Value::Null))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Cannot access property of non-object/non-array".to_string(),
+                                location,
+                            )),
                         }
-                        _ => Err(RuntimeError::with_location(
-                            "Cannot access property of non-object/non-array".to_string(),
-                            location,
-                        )),
                     },
                     _ => Err(RuntimeError::with_location(
                         "Computed property must evaluate to a string or number".to_string(),
@@ -1842,6 +1874,13 @@ async fn evaluate_expression(
                 ));
             };
 
+            if final_prop_name == FORBIDDEN_KEY {
+                return Err(RuntimeError::with_location(
+                    format!("Assignment to the key '{}' is forbidden.", FORBIDDEN_KEY),
+                    location,
+                ));
+            }
+
             match *object {
                 Expression::Identifier { name, .. } => {
                     let mut obj_value = context
@@ -1987,6 +2026,7 @@ async fn evaluate_expression(
                 serde_json::Value::Object(map) => {
                     let keys: Vec<serde_json::Value> = map
                         .keys()
+                        .filter(|k| k != &FORBIDDEN_KEY)
                         .map(|k| serde_json::Value::String(k.clone()))
                         .collect();
                     Ok(serde_json::Value::Array(keys))
