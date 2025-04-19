@@ -353,9 +353,7 @@ checksum = "fbd780fe5cc30f81464441920d82ac8740e2e46b29a6fad543ddd075229ce37e"
 
 [[package]]
 name = "hexput-ast-api"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e23da7f9ba59ff7e170c2705efa64655065811ab962dfdab1bf0379ecc7d1503"
+version = "0.1.1"
 dependencies = [
  "logos",
  "serde",
@@ -366,6 +364,8 @@ dependencies = [
 [[package]]
 name = "hexput-ast-api"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f34481e539d18eb673fb7840541f81cf548e98f0d968d5896b1ae4097340967"
 dependencies = [
  "logos",
  "serde",
@@ -385,12 +385,12 @@ dependencies = [
 
 [[package]]
 name = "hexput-runtime"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "env_logger",
  "futures-util",
- "hexput-ast-api 0.1.0",
+ "hexput-ast-api 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "serde",
  "serde_json",

@@ -1403,6 +1403,11 @@ async fn evaluate_expression(
                                 location,
                             )),
                         },
+                        
+                        // Add these patterns to handle And and Or operators
+                        // These should never be reached as they're handled in the outer match
+                        Operator::And => unreachable!("And operator should be handled in the outer match"),
+                        Operator::Or => unreachable!("Or operator should be handled in the outer match"),
                     }
                 }
             }
