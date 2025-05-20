@@ -601,6 +601,25 @@ impl<'a> Parser<'a> {
                         right: Box::new(right),
                         location,
                     };
+                },
+                Token::NotEqual => {
+                    self.advance();
+                    let right = self.parse_comparison()?;
+                    let right_loc = get_expr_location!(right);
+                    
+                    let location = SourceLocation::new(
+                        start_location.start_line,
+                        start_location.start_column,
+                        right_loc.end_line,
+                        right_loc.end_column
+                    );
+                    
+                    expr = Expression::BinaryExpression {
+                        left: Box::new(expr),
+                        operator: Operator::NotEqual,
+                        right: Box::new(right),
+                        location,
+                    };
                 }
                 _ => break,
             }
@@ -630,6 +649,25 @@ impl<'a> Parser<'a> {
                     expr = Expression::BinaryExpression {
                         left: Box::new(expr),
                         operator: Operator::Plus,
+                        right: Box::new(right),
+                        location,
+                    };
+                },
+                Token::Minus => {
+                    self.advance();
+                    let right = self.parse_multiplicative()?;
+                    let right_loc = get_expr_location!(right);
+                    
+                    let location = SourceLocation::new(
+                        start_location.start_line,
+                        start_location.start_column,
+                        right_loc.end_line,
+                        right_loc.end_column
+                    );
+                    
+                    expr = Expression::BinaryExpression {
+                        left: Box::new(expr),
+                        operator: Operator::Minus,
                         right: Box::new(right),
                         location,
                     };

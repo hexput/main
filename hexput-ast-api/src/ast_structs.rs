@@ -274,7 +274,9 @@ impl Property {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Operator {
     Equal,
+    NotEqual,
     Plus,
+    Minus,
     Multiply,
     Divide,
     Greater,

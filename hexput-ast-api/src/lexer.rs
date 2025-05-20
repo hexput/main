@@ -70,8 +70,14 @@ pub enum Token {
     #[token("==")]
     EqualEqual,
     
+    #[token("!=")]
+    NotEqual,
+    
     #[token("+")]
     Plus,
+    
+    #[token("-")]
+    Minus,
     
     #[token("*")]
     Multiply,
