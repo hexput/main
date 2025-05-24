@@ -1,6 +1,6 @@
 [package]
 name = "hexput-runtime"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "WebSocket runtime server for Hexput AST processing"
 license = "MIT"
