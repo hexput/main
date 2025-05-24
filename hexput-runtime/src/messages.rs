@@ -175,6 +175,12 @@ impl AstParserOptions {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CallbackValue {
+    pub callback_type: String, // "callback_reference"
+    pub name: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct CallbackFunction {
     pub name: String,

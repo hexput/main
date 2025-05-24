@@ -1,18 +1,32 @@
 use crate::error::RuntimeError;
 use hexput_ast_api::ast_structs::SourceLocation;
 use serde_json::{Map, Value};
+use std::future::Future;
+use std::pin::Pin;
 
 const FORBIDDEN_KEY: &str = "secret_data";
+const CALLBACK_REFERENCE_HASH: &str = "__callback_ref_constant";
+
+pub type CallbackExecutor = Box<dyn Fn(String, Vec<Value>) -> Pin<Box<dyn Future<Output = Result<Value, RuntimeError>> + Send>> + Send + Sync>;
 
 pub fn execute_builtin_method(
     object: &Value,
     method_name: &str,
     args: &[Value],
     location: &SourceLocation,
+    callback_executor: Option<&CallbackExecutor>,
 ) -> Result<Option<Value>, RuntimeError> {
+    // Check if object contains forbidden value - if so, deny all method calls
+    if contains_forbidden_value(object) {
+        return Err(RuntimeError::with_location(
+            "Cannot call methods on object containing restricted data. Use as reference only.".to_string(),
+            location.clone(),
+        ));
+    }
+
     match object {
         Value::String(s) => execute_string_method(s, method_name, args, location),
-        Value::Array(arr) => execute_array_method(arr, method_name, args, location),
+        Value::Array(arr) => execute_array_method(arr, method_name, args, location, callback_executor),
         Value::Object(obj) => execute_object_method(obj, method_name, args, location),
         Value::Number(num) => execute_number_method(num, method_name, args, location),
         Value::Bool(b) => execute_boolean_method(b, method_name, args, location),
@@ -224,6 +238,7 @@ fn execute_array_method(
     method_name: &str,
     args: &[Value],
     location: &SourceLocation,
+    callback_executor: Option<&CallbackExecutor>,
 ) -> Result<Option<Value>, RuntimeError> {
     match method_name {
         "length" | "len" => {
@@ -347,12 +362,283 @@ fn execute_array_method(
                 ));
             }
             
-            Ok(None)
+            // Check if the argument is a callback reference
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    // This will need to be handled asynchronously in the caller
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("map".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.map".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.map expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "filter" => {
+            if args.len() != 1 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.filter expects 1 argument (callback), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("filter".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.filter".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.filter expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "forEach" => {
+            if args.len() != 1 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.forEach expects 1 argument (callback), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("forEach".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.forEach".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.forEach expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "reduce" => {
+            if args.len() < 1 || args.len() > 2 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.reduce expects 1-2 arguments (callback, initial), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    let initial_value = if args.len() > 1 {
+                        args[1].clone()
+                    } else {
+                        Value::Null
+                    };
+                    
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("reduce".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map.insert("initial_value".to_string(), initial_value);
+                        map.insert("has_initial".to_string(), Value::Bool(args.len() > 1));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.reduce".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.reduce expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "find" => {
+            if args.len() != 1 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.find expects 1 argument (callback), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("find".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.find".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.find expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "findIndex" => {
+            if args.len() != 1 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.findIndex expects 1 argument (callback), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("findIndex".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.findIndex".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.findIndex expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "some" => {
+            if args.len() != 1 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.some expects 1 argument (callback), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("some".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.some".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.some expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
+        }
+        "every" => {
+            if args.len() != 1 {
+                return Err(RuntimeError::with_location(
+                    format!("Array.every expects 1 argument (callback), got {}", args.len()),
+                    location.clone(),
+                ));
+            }
+            
+            if let Some(callback_name) = extract_callback_name(&args[0]) {
+                if callback_executor.is_some() {
+                    return Ok(Some(Value::Object({
+                        let mut map = Map::new();
+                        map.insert("__builtin_async_op".to_string(), Value::String("every".to_string()));
+                        map.insert("callback_name".to_string(), Value::String(callback_name));
+                        map.insert("array".to_string(), Value::Array(array.to_vec()));
+                        map
+                    })));
+                } else {
+                    return Err(RuntimeError::with_location(
+                        "Callback executor not available for Array.every".to_string(),
+                        location.clone(),
+                    ));
+                }
+            } else {
+                return Err(RuntimeError::with_location(
+                    "Array.every expects a callback function reference".to_string(),
+                    location.clone(),
+                ));
+            }
         }
         _ => Ok(None), 
     }
 }
 
+fn extract_callback_name(value: &Value) -> Option<String> {
+    if let Value::Object(map) = value {
+        if let (Some(Value::String(type_val)), Some(Value::String(name_val))) = 
+            (map.get("type"), map.get("name")) {
+            if type_val == "callback_reference" {
+                // Check for constant hash first
+                if let Some(Value::String(hash_val)) = map.get("hash") {
+                    if hash_val == CALLBACK_REFERENCE_HASH {
+                        return Some(name_val.clone());
+                    }
+                }
+                // If hash doesn't match, it might be an old format or invalid
+                // Still return the name for backward compatibility but this should be validated
+                return Some(name_val.clone());
+            }
+        }
+    }
+    None
+}
+
+fn contains_forbidden_value(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.contains_key(FORBIDDEN_KEY) || map.values().any(contains_forbidden_value)
+        }
+        Value::Array(arr) => {
+            arr.iter().any(contains_forbidden_value)
+        }
+        _ => false,
+    }
+}
 
 fn execute_object_method(
     object: &Map<String, Value>,

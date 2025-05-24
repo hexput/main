@@ -7,6 +7,7 @@ use crate::messages::{
 use crate::builtins;
 use hexput_ast_api::ast_structs::{Statement, UnaryOperator};
 use serde_json::Value;
+use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -20,6 +21,7 @@ type PendingFunctionValidations =
     Arc<Mutex<HashMap<String, oneshot::Sender<FunctionExistsResponse>>>>;
 
 const FORBIDDEN_KEY: &str = "secret_data";
+const CALLBACK_REFERENCE_HASH: &str = "__callback_ref_constant";
 
 struct ExecutionContext {
     variables: HashMap<String, serde_json::Value>,
@@ -769,7 +771,15 @@ async fn extract_property_path(
     loop {
         match current_expr {
             Expression::Identifier { name, .. } => {
-                path.push(name.clone());
+                // First check if this identifier refers to a callback
+                if let Some(_callback) = context.get_callback(&name) {
+                    // For callback references in paths, we should not use the hash
+                    // but rather treat them as regular identifiers for property access
+                    path.push(name.clone());
+                } else {
+                    // Then check for regular variables
+                    path.push(name.clone());
+                }
                 break;
             }
             Expression::MemberExpression {
@@ -965,9 +975,20 @@ async fn evaluate_expression(
             serde_json::Number::from_f64(value).unwrap_or(serde_json::Number::from(0)),
         )),
         Expression::Identifier { name, .. } => {
-            context.get_variable(&name).cloned().ok_or_else(|| {
-                RuntimeError::with_location(format!("Undefined variable: {}", name), location)
-            })
+            // First check if this identifier refers to a callback
+            if let Some(_callback) = context.get_callback(&name) {
+                // Use constant hash for all callback references
+                Ok(serde_json::json!({
+                    "type": "callback_reference",
+                    "name": name,
+                    "hash": CALLBACK_REFERENCE_HASH
+                }))
+            } else {
+                // Then check for regular variables
+                context.get_variable(&name).cloned().ok_or_else(|| {
+                    RuntimeError::with_location(format!("Undefined variable: {}", name), location)
+                })
+            }
         }
         Expression::CallExpression {
             callee, arguments, ..
@@ -1500,6 +1521,14 @@ async fn evaluate_expression(
                 Err(e) => return Err(add_location_if_needed(e, &location)),
             };
 
+            // Check if object contains forbidden value - if so, deny all property access
+            if contains_forbidden_value(&obj_value) {
+                return Err(RuntimeError::with_location(
+                    "Cannot access properties of object containing restricted data. Use as reference only.".to_string(),
+                    location,
+                ));
+            }
+
             if !computed {
                 if let Some(prop) = property {
                     if prop == FORBIDDEN_KEY {
@@ -1709,6 +1738,14 @@ async fn evaluate_expression(
                 Err(e) => return Err(add_location_if_needed(e, &location)),
             };
 
+            // Check if object contains forbidden value - if so, deny all method calls
+            if contains_forbidden_value(&obj) {
+                return Err(RuntimeError::with_location(
+                    "Cannot call methods on object containing restricted data. Use as reference only.".to_string(),
+                    location,
+                ));
+            }
+
             let method_name = if !computed {
                 if let Some(prop) = property {
                     prop
@@ -1767,13 +1804,49 @@ async fn evaluate_expression(
                 evaluated_args.push(value);
             }
 
-            match builtins::execute_builtin_method(&obj, &method_name, &evaluated_args, &location) {
+            // Create callback executor for builtin methods
+            let callback_executor: crate::builtins::CallbackExecutor = {
+                let context_callbacks = context.callbacks.clone();
+                Box::new(move |callback_name: String, args: Vec<serde_json::Value>| {
+                    let context_callbacks = context_callbacks.clone();
+                    Box::pin(async move {
+                        if let Some(_callback) = context_callbacks.get(&callback_name) {
+                            // For now, return the callback name and args as a special marker
+                            // This will be handled by the async builtin operation handler
+                            Ok(serde_json::json!({
+                                "__callback_execution_request": true,
+                                "callback_name": callback_name,
+                                "args": args
+                            }))
+                        } else {
+                            Err(RuntimeError::CallbackExecutionError(format!("Callback '{}' not found", callback_name)))
+                        }
+                    })
+                })
+            };
+
+            match builtins::execute_builtin_method(&obj, &method_name, &evaluated_args, &location, Some(&callback_executor)) {
                 Ok(Some(result)) => {
-                    debug!("Executed built-in method: {}.{}", type_name(&obj), method_name);
+                    // Check if this is an async builtin operation
+                    if let serde_json::Value::Object(ref map) = result {
+                        if let Some(serde_json::Value::String(op_type)) = map.get("__builtin_async_op") {
+                            return handle_async_builtin_operation(
+                                op_type,
+                                map,
+                                context,
+                                secret_context,
+                                function_calls,
+                                function_validations,
+                                send_message,
+                            ).await;
+                        }
+                    }
+                    
+                    debug!("Executed built-in method: {}.{}", type_name_of_val(&obj), method_name);
                     return Ok(result);
                 },
                 Ok(None) => {
-                    debug!("No built-in method found for {}.{}, checking if remote method exists", type_name(&obj), method_name);
+                    debug!("No built-in method found for {}.{}, checking if remote method exists", type_name_of_val(&obj), method_name);
                 },
                 Err(e) => {
                     return Err(e);
@@ -1933,6 +2006,29 @@ async fn evaluate_expression(
             value,
             ..
         } => {
+            // First evaluate the object to check for forbidden values
+            let obj_check = match Box::pin(evaluate_expression(
+                (*object).clone(),
+                context,
+                secret_context,
+                function_calls.clone(),
+                function_validations.clone(),
+                send_message,
+            ))
+            .await
+            {
+                Ok(val) => val,
+                Err(e) => return Err(add_location_if_needed(e, &location)),
+            };
+
+            // Check if object contains forbidden value - if so, deny all property assignment
+            if contains_forbidden_value(&obj_check) {
+                return Err(RuntimeError::with_location(
+                    "Cannot modify properties of object containing restricted data. Use as reference only.".to_string(),
+                    location,
+                ));
+            }
+
             let value_to_assign = match Box::pin(evaluate_expression(
                 *value,
                 context,
@@ -2003,10 +2099,10 @@ async fn evaluate_expression(
                 ));
             }
 
-            match *object {
+            match object.as_ref() {
                 Expression::Identifier { name, .. } => {
                     let mut obj_value = context
-                        .get_variable(&name)
+                        .get_variable(name)
                         .cloned()
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
@@ -2022,11 +2118,11 @@ async fn evaluate_expression(
                             arr[index] = value_to_assign.clone();
                         }
 
-                        context.set_variable(name, obj_value);
+                        context.set_variable(name.clone(), obj_value);
                     } else if let serde_json::Value::Object(ref mut map) = obj_value {
                         map.insert(final_prop_name, value_to_assign.clone());
 
-                        context.set_variable(name, obj_value);
+                        context.set_variable(name.clone(), obj_value);
                     } else {
                         return Err(RuntimeError::with_location(
                             format!(
@@ -2045,7 +2141,7 @@ async fn evaluate_expression(
 
                 Expression::MemberExpression { .. } => {
                     let property_path = match Box::pin(extract_property_path(
-                        &*object,
+                        object.as_ref(),
                         context,
                         secret_context,
                         &function_calls,
@@ -2090,7 +2186,7 @@ async fn evaluate_expression(
 
                 _ => {
                     let mut obj_value = match Box::pin(evaluate_expression(
-                        *object,
+                        (*object).clone(),
                         context,
                         secret_context,
                         function_calls.clone(),
@@ -2163,7 +2259,8 @@ async fn evaluate_expression(
             if context.get_callback(&name).is_some() {
                 Ok(serde_json::json!({
                     "type": "callback_reference",
-                    "name": name
+                    "name": name,
+                    "hash": CALLBACK_REFERENCE_HASH
                 }))
             } else {
                 Err(RuntimeError::with_location(
@@ -2178,16 +2275,19 @@ async fn evaluate_expression(
     }
 }
 
-fn type_name(value: &Value) -> &'static str {
+fn contains_forbidden_value(value: &serde_json::Value) -> bool {
     match value {
-        Value::String(_) => "String",
-        Value::Number(_) => "Number",
-        Value::Bool(_) => "Boolean",
-        Value::Array(_) => "Array",
-        Value::Object(_) => "Object",
-        Value::Null => "Null",
+        serde_json::Value::Object(map) => {
+            map.contains_key(FORBIDDEN_KEY) || map.values().any(contains_forbidden_value)
+        }
+        serde_json::Value::Array(arr) => {
+            arr.iter().any(contains_forbidden_value)
+        }
+        _ => false,
     }
 }
+
+// Remove the generate_callback_hash function as we use a constant now
 
 async fn execute_callback(
     callback: CallbackFunction,
@@ -2255,4 +2355,319 @@ async fn execute_callback(
         callback.name, return_value
     );
     Ok(return_value)
+}
+
+async fn handle_async_builtin_operation(
+    op_type: &str,
+    params: &serde_json::Map<String, serde_json::Value>,
+    context: &mut ExecutionContext,
+    secret_context: Option<&serde_json::Value>,
+    function_calls: PendingFunctionCalls,
+    function_validations: PendingFunctionValidations,
+    send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
+) -> Result<serde_json::Value, RuntimeError> {
+    let callback_name = params.get("callback_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| RuntimeError::CallbackExecutionError("Missing callback name".to_string()))?;
+    
+    let array = params.get("array")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| RuntimeError::CallbackExecutionError("Missing array parameter".to_string()))?;
+    
+    let callback = context.get_callback(callback_name)
+        .cloned()
+        .ok_or_else(|| RuntimeError::CallbackExecutionError(format!("Callback '{}' not found", callback_name)))?;
+    
+    match op_type {
+        "map" => {
+            let mut results = Vec::new();
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                let result = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+                
+                results.push(result);
+            }
+            Ok(serde_json::Value::Array(results))
+        },
+        "filter" => {
+            let mut results = Vec::new();
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                let result = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+                
+                // Check if result is truthy
+                let include = match result {
+                    serde_json::Value::Bool(b) => b,
+                    serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Null => false,
+                };
+                
+                if include {
+                    results.push(item.clone());
+                }
+            }
+            Ok(serde_json::Value::Array(results))
+        },
+        "forEach" => {
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+            }
+            Ok(serde_json::Value::Null)
+        },
+        "reduce" => {
+            let has_initial = params.get("has_initial")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            
+            let mut accumulator = if has_initial {
+                params.get("initial_value")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
+            } else if !array.is_empty() {
+                array[0].clone()
+            } else {
+                return Err(RuntimeError::CallbackExecutionError(
+                    "Reduce of empty array with no initial value".to_string()
+                ));
+            };
+            
+            let start_index = if has_initial { 0 } else { 1 };
+            
+            for (index, item) in array.iter().enumerate().skip(start_index) {
+                let args = vec![
+                    value_to_expression(accumulator),
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                accumulator = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+            }
+            
+            Ok(accumulator)
+        },
+        "find" => {
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                let result = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+                
+                // Check if result is truthy
+                let found = match result {
+                    serde_json::Value::Bool(b) => b,
+                    serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Null => false,
+                };
+                
+                if found {
+                    return Ok(item.clone());
+                }
+            }
+            Ok(serde_json::Value::Null)
+        },
+        "findIndex" => {
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                let result = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+                
+                // Check if result is truthy
+                let found = match result {
+                    serde_json::Value::Bool(b) => b,
+                    serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Null => false,
+                };
+                
+                if found {
+                    return Ok(serde_json::Value::Number(index.into()));
+                }
+            }
+            Ok(serde_json::Value::Number((-1).into()))
+        },
+        "some" => {
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                let result = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+                
+                // Check if result is truthy
+                let is_truthy = match result {
+                    serde_json::Value::Bool(b) => b,
+                    serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Null => false,
+                };
+                
+                if is_truthy {
+                    return Ok(serde_json::Value::Bool(true));
+                }
+            }
+            Ok(serde_json::Value::Bool(false))
+        },
+        "every" => {
+            for (index, item) in array.iter().enumerate() {
+                let args = vec![
+                    value_to_expression(item.clone()),
+                    value_to_expression(serde_json::Value::Number(index.into())),
+                ];
+                
+                let result = execute_callback(
+                    callback.clone(),
+                    args,
+                    context,
+                    secret_context,
+                    function_calls.clone(),
+                    function_validations.clone(),
+                    send_message,
+                ).await?;
+                
+                // Check if result is truthy
+                let is_truthy = match result {
+                    serde_json::Value::Bool(b) => b,
+                    serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Null => false,
+                };
+                
+                if !is_truthy {
+                    return Ok(serde_json::Value::Bool(false));
+                }
+            }
+            Ok(serde_json::Value::Bool(true))
+        },
+        _ => Err(RuntimeError::CallbackExecutionError(format!("Unknown async builtin operation: {}", op_type))),
+    }
+}
+
+fn value_to_expression(value: serde_json::Value) -> hexput_ast_api::ast_structs::Expression {
+    use hexput_ast_api::ast_structs::{Expression, SourceLocation};
+    
+    let default_location = SourceLocation {
+        start_line: 0,
+        start_column: 0,
+        end_line: 0,
+        end_column: 0,
+    };
+    
+    match value {
+        serde_json::Value::String(s) => Expression::StringLiteral {
+            value: s,
+            location: default_location,
+        },
+        serde_json::Value::Number(n) => Expression::NumberLiteral {
+            value: n.as_f64().unwrap_or(0.0),
+            location: default_location,
+        },
+        serde_json::Value::Bool(b) => Expression::BooleanLiteral {
+            value: b,
+            location: default_location,
+        },
+        serde_json::Value::Null => Expression::NullLiteral {
+            location: default_location,
+        },
+        serde_json::Value::Array(arr) => Expression::ArrayExpression {
+            elements: arr.into_iter().map(value_to_expression).collect(),
+            location: default_location,
+        },
+        serde_json::Value::Object(obj) => Expression::ObjectExpression {
+            properties: obj.into_iter().map(|(k, v)| {
+                hexput_ast_api::ast_structs::Property::new(
+                    k,
+                    value_to_expression(v),
+                    default_location,
+                )
+            }).collect(),
+            location: default_location,
+        },
+    }
 }

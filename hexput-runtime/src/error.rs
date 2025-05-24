@@ -30,6 +30,9 @@ pub enum RuntimeError {
         location: SourceLocation,
     },
 
+    #[error("Callback execution error: {0}")]
+    CallbackExecutionError(String),
+
     #[error("Function call error: {0}")]
     FunctionCallError(String),
 
