@@ -5,7 +5,7 @@ use crate::messages::{
     WebSocketResponse,
 };
 use crate::builtins;
-use hexput_ast_api::ast_structs::{Statement, UnaryOperator};
+use hexput_ast_api::ast_structs::{Block, Expression, Operator, Program, Property, SourceLocation, Statement, UnaryOperator};
 use serde_json::Value;
 use std::any::type_name_of_val;
 use std::collections::HashMap;
@@ -338,7 +338,7 @@ async fn handle_execute_request(
 }
 
 async fn execute_program(
-    program: hexput_ast_api::ast_structs::Program,
+    program: Program,
     context_variables: serde_json::Map<String, serde_json::Value>,
     secret_context: Option<serde_json::Value>,
     function_calls: PendingFunctionCalls,
@@ -424,7 +424,7 @@ fn extract_return_value(value: serde_json::Value) -> serde_json::Value {
 }
 
 async fn execute_statement(
-    statement: hexput_ast_api::ast_structs::Statement,
+    statement: Statement,
     context: &mut ExecutionContext,
     secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
@@ -717,7 +717,7 @@ async fn execute_statement(
 
 fn add_location_if_needed(
     error: RuntimeError,
-    location: &hexput_ast_api::ast_structs::SourceLocation,
+    location: &SourceLocation,
 ) -> RuntimeError {
     match error {
         RuntimeError::ExecutionErrorWithLocation { .. } => error,
@@ -727,7 +727,7 @@ fn add_location_if_needed(
 }
 
 async fn execute_block(
-    block: hexput_ast_api::ast_structs::Block,
+    block: Block,
     context: &mut ExecutionContext,
     secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
@@ -756,14 +756,13 @@ async fn execute_block(
 }
 
 async fn extract_property_path(
-    expression: &hexput_ast_api::ast_structs::Expression,
+    expression: &Expression,
     context: &mut ExecutionContext,
     secret_context: Option<&serde_json::Value>,
     function_calls: &PendingFunctionCalls,
     function_validations: &PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
 ) -> Result<Vec<String>, RuntimeError> {
-    use hexput_ast_api::ast_structs::Expression;
 
     let mut path = Vec::new();
     let mut current_expr = expression;
@@ -941,14 +940,13 @@ fn update_nested_object(
 }
 
 async fn evaluate_expression(
-    expression: hexput_ast_api::ast_structs::Expression,
+    expression: Expression,
     context: &mut ExecutionContext,
     secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
     function_validations: PendingFunctionValidations,
     send_message: &impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<(), RuntimeError>>,
 ) -> Result<serde_json::Value, RuntimeError> {
-    use hexput_ast_api::ast_structs::{Expression, Operator};
 
     let location = match &expression {
         Expression::StringLiteral { location, .. } => location.clone(),
@@ -2292,7 +2290,7 @@ fn contains_forbidden_value(value: &serde_json::Value) -> bool {
 
 async fn execute_callback(
     callback: CallbackFunction,
-    arguments: Vec<hexput_ast_api::ast_structs::Expression>,
+    arguments: Vec<Expression>,
     parent_context: &mut ExecutionContext,
     secret_context: Option<&serde_json::Value>,
     function_calls: PendingFunctionCalls,
@@ -2630,8 +2628,8 @@ async fn handle_async_builtin_operation(
     }
 }
 
-fn value_to_expression(value: serde_json::Value) -> hexput_ast_api::ast_structs::Expression {
-    use hexput_ast_api::ast_structs::{Expression, SourceLocation};
+fn value_to_expression(value: serde_json::Value) -> Expression {
+    
     
     let default_location = SourceLocation {
         start_line: 0,
@@ -2662,7 +2660,7 @@ fn value_to_expression(value: serde_json::Value) -> hexput_ast_api::ast_structs:
         },
         serde_json::Value::Object(obj) => Expression::ObjectExpression {
             properties: obj.into_iter().map(|(k, v)| {
-                hexput_ast_api::ast_structs::Property::new(
+                Property::new(
                     k,
                     value_to_expression(v),
                     default_location,
