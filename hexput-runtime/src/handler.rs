@@ -959,7 +959,7 @@ async fn evaluate_expression(
         Expression::MemberAssignmentExpression { location, .. } => location.clone(),
         Expression::CallExpression { location, .. } => location.clone(),
         Expression::MemberCallExpression { location, .. } => location.clone(),
-        Expression::CallbackReference { location, .. } => location.clone(),
+        Expression::InlineCallbackExpression { location, .. } => location.clone(),
         Expression::ArrayExpression { location, .. } => location.clone(),
         Expression::ObjectExpression { location, .. } => location.clone(),
         Expression::MemberExpression { location, .. } => location.clone(),
@@ -2255,22 +2255,23 @@ async fn evaluate_expression(
                 )),
             }
         }
-        Expression::CallbackReference { name, .. } => {
-            if context.get_callback(&name).is_some() {
-                Ok(serde_json::json!({
-                    "type": "callback_reference",
-                    "name": name,
-                    "hash": CALLBACK_REFERENCE_HASH
-                }))
-            } else {
-                Err(RuntimeError::with_location(
-                    format!("Referenced callback '{}' is not defined", name),
-                    location,
-                ))
-            }
+        Expression::InlineCallbackExpression { name, params, body, .. } => {
+            let callback = CallbackFunction {
+                name: name.clone(),
+                params,
+                body,
+            };
+            context.add_callback(callback);
+            debug!("Registered inline callback: {}", name);
+            
+            // Return callback reference like the old CallbackReference did
+            Ok(serde_json::json!({
+                "type": "callback_reference",
+                "name": name,
+                "hash": CALLBACK_REFERENCE_HASH
+            }))
         }
         Expression::BooleanLiteral { value, .. } => Ok(serde_json::Value::Bool(value)),
-
         Expression::NullLiteral { .. } => Ok(serde_json::Value::Null),
     }
 }

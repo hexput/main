@@ -353,11 +353,10 @@ checksum = "fbd780fe5cc30f81464441920d82ac8740e2e46b29a6fad543ddd075229ce37e"
 
 [[package]]
 name = "hexput-ast-api"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce582cdf0d73fa0e5c0867e0232bdb9b2a0b633f4efd459d0f2a163a32489d0"
+version = "0.1.6"
 dependencies = [
  "logos",
+ "rand 0.9.1",
  "serde",
  "serde_json",
  "tokio",
@@ -365,9 +364,12 @@ dependencies = [
 
 [[package]]
 name = "hexput-ast-api"
-version = "0.1.3"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5e6cb6bb3b1ad79545025699eeab24f762ac7c87250518a19a5dd1fae6ad03f"
 dependencies = [
  "logos",
+ "rand 0.9.1",
  "serde",
  "serde_json",
  "tokio",
@@ -378,7 +380,7 @@ name = "hexput-ast-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "hexput-ast-api 0.1.3",
+ "hexput-ast-api 0.1.6",
  "serde",
  "serde_json",
 ]
@@ -390,7 +392,7 @@ dependencies = [
  "clap",
  "env_logger",
  "futures-util",
- "hexput-ast-api 0.1.2",
+ "hexput-ast-api 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "serde",
  "serde_json",
@@ -763,8 +765,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
- "rand_chacha",
- "rand_core",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
+dependencies = [
+ "rand_chacha 0.9.0",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -774,7 +786,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -784,6 +806,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.15",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
+dependencies = [
+ "getrandom 0.3.1",
 ]
 
 [[package]]
@@ -1129,7 +1160,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "rand",
+ "rand 0.8.5",
  "sha1",
  "thiserror",
  "url",
