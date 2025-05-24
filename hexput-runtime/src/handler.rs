@@ -1309,6 +1309,41 @@ async fn evaluate_expression(
                             _ => Ok(serde_json::Value::Bool(false)),
                         },
 
+                        Operator::NotEqual => match (&left_value, &right_value) {
+                            (serde_json::Value::Null, serde_json::Value::Null) => {
+                                Ok(serde_json::Value::Bool(false))
+                            }
+                            (serde_json::Value::Bool(l), serde_json::Value::Bool(r)) => {
+                                Ok(serde_json::Value::Bool(l != r))
+                            }
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let l_f64 = l.as_f64().unwrap_or(0.0);
+                                let r_f64 = r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Bool(
+                                    (l_f64 - r_f64).abs() >= f64::EPSILON,
+                                ))
+                            }
+                            (serde_json::Value::String(l), serde_json::Value::String(r)) => {
+                                Ok(serde_json::Value::Bool(l != r))
+                            }
+
+                            _ => Ok(serde_json::Value::Bool(true)),
+                        },
+
+                        Operator::Minus => match (&left_value, &right_value) {
+                            (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
+                                let result = l.as_f64().unwrap_or(0.0) - r.as_f64().unwrap_or(0.0);
+                                Ok(serde_json::Value::Number(
+                                    serde_json::Number::from_f64(result)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                ))
+                            }
+                            _ => Err(RuntimeError::with_location(
+                                "Invalid operand types for subtraction".to_string(),
+                                location,
+                            )),
+                        },
+
                         Operator::Less => match (&left_value, &right_value) {
                             (serde_json::Value::Number(l), serde_json::Value::Number(r)) => {
                                 let l_f64 = l.as_f64().unwrap_or(0.0);

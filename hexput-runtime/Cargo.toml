@@ -8,7 +8,7 @@ keywords = ["hexput", "ast", "parsing", "runtime", "websocket"]
 categories = ["parsing", "network-programming", "asynchronous", "compilers"]
 
 [dependencies]
-hexput-ast-api = { version = "0.1.1" }
+hexput-ast-api = { version = "0.1.2" }
 tokio = { version = "1.28.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.19.0"
 futures-util = "0.3.28"
