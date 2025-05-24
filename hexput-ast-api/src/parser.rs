@@ -17,7 +17,7 @@ macro_rules! get_expr_location {
             Expression::MemberAssignmentExpression { location, .. } |
             Expression::CallExpression { location, .. } |
             Expression::MemberCallExpression { location, .. } |  
-            Expression::CallbackReference { location, .. } |
+            Expression::InlineCallbackExpression { location, .. } |
             Expression::ArrayExpression { location, .. } |
             Expression::ObjectExpression { location, .. } |
             Expression::MemberExpression { location, .. } |
@@ -41,7 +41,7 @@ macro_rules! get_expr_start_line {
             Expression::MemberAssignmentExpression { location, .. } |
             Expression::CallExpression { location, .. } |
             Expression::MemberCallExpression { location, .. } |  
-            Expression::CallbackReference { location, .. } |
+            Expression::InlineCallbackExpression { location, .. } |
             Expression::ArrayExpression { location, .. } |
             Expression::ObjectExpression { location, .. } |
             Expression::MemberExpression { location, .. } |
@@ -65,7 +65,7 @@ macro_rules! get_expr_start_column {
             Expression::MemberAssignmentExpression { location, .. } |
             Expression::CallExpression { location, .. } |
             Expression::MemberCallExpression { location, .. } |  
-            Expression::CallbackReference { location, .. } |
+            Expression::InlineCallbackExpression { location, .. } |
             Expression::ArrayExpression { location, .. } |
             Expression::ObjectExpression { location, .. } |
             Expression::MemberExpression { location, .. } |
@@ -921,13 +921,65 @@ impl<'a> Parser<'a> {
             }
         }
         
-        arguments.push(self.parse_expression()?);
+        // Check for inline callback syntax: cb name(params) { ... }
+        if let Some(token_with_span) = self.current_token {
+            if token_with_span.token == Token::Cb {
+                if !self.flags.allow_callbacks {
+                    return Err(ParseError::FeatureDisabled("Inline callback expressions".to_string(), self.current_location()));
+                }
+                
+                let inline_callback = self.parse_inline_callback()?;
+                arguments.push(inline_callback);
+                
+                // Check for more arguments after callback
+                while let Some(token_with_span) = self.current_token {
+                    match &token_with_span.token {
+                        Token::Comma => {
+                            self.advance();
+                            arguments.push(self.parse_expression()?);
+                        }
+                        Token::CloseParen => {
+                            let end_location = self.current_location();
+                            self.advance();
+                            
+                            let location = SourceLocation::new(
+                                start_location.start_line,
+                                start_location.start_column,
+                                end_location.end_line,
+                                end_location.end_column
+                            );
+                            
+                            return Ok(Expression::CallExpression { callee, arguments, location });
+                        }
+                        _ => return Err(ParseError::ExpectedToken("',' or ')'".to_string(), self.current_location())),
+                    }
+                }
+            } else {
+                arguments.push(self.parse_expression()?);
+            }
+        } else {
+            arguments.push(self.parse_expression()?);
+        }
         
         while let Some(token_with_span) = self.current_token {
             match &token_with_span.token {
                 Token::Comma => {
                     self.advance();
-                    arguments.push(self.parse_expression()?);
+                    
+                    // Check for inline callback syntax after comma
+                    if let Some(token_with_span) = self.current_token {
+                        if token_with_span.token == Token::Cb {
+                            if !self.flags.allow_callbacks {
+                                return Err(ParseError::FeatureDisabled("Inline callback expressions".to_string(), self.current_location()));
+                            }
+                            let inline_callback = self.parse_inline_callback()?;
+                            arguments.push(inline_callback);
+                        } else {
+                            arguments.push(self.parse_expression()?);
+                        }
+                    } else {
+                        arguments.push(self.parse_expression()?);
+                    }
                 }
                 Token::CloseParen => {
                     let end_location = self.current_location();
@@ -947,6 +999,82 @@ impl<'a> Parser<'a> {
         }
         
         Err(ParseError::ExpectedToken("')'".to_string(), self.current_location()))
+    }
+
+    fn parse_inline_callback(&mut self) -> Result<Expression, ParseError> {
+        let start_location = self.current_location();
+        self.advance(); // consume 'cb'
+
+        let name = match &self.current_token {
+            Some(token_with_span) => match &token_with_span.token {
+                Token::Identifier(name) => name.clone(),
+                _ => return Err(ParseError::ExpectedToken("callback name".to_string(), self.current_location())),
+            },
+            None => return Err(ParseError::EndOfInput(self.current_location())),
+        };
+        self.advance();
+
+        self.expect(Token::OpenParen)?;
+        let mut params = Vec::new();
+        
+        if let Some(token_with_span) = self.current_token {
+            if token_with_span.token == Token::CloseParen {
+                self.advance();
+            } else {
+                if let Some(token_with_span) = self.current_token {
+                    match &token_with_span.token {
+                        Token::Identifier(param) => {
+                            params.push(param.clone());
+                            self.advance();
+                        },
+                        _ => return Err(ParseError::ExpectedToken("parameter name".to_string(), self.current_location())),
+                    }
+                }
+
+                while let Some(token_with_span) = self.current_token {
+                    match &token_with_span.token {
+                        Token::Comma => {
+                            self.advance();
+                            match &self.current_token {
+                                Some(token_with_span) => match &token_with_span.token {
+                                    Token::Identifier(param) => {
+                                        params.push(param.clone());
+                                        self.advance();
+                                    },
+                                    _ => return Err(ParseError::ExpectedToken("parameter name".to_string(), self.current_location())),
+                                },
+                                None => return Err(ParseError::EndOfInput(self.current_location())),
+                            }
+                        },
+                        Token::CloseParen => {
+                            self.advance();
+                            break;
+                        },
+                        _ => return Err(ParseError::ExpectedToken("',' or ')'".to_string(), self.current_location())),
+                    }
+                }
+            }
+        } else {
+            return Err(ParseError::EndOfInput(self.current_location()));
+        }
+
+        let body = self.parse_block()?;
+
+        let end_location = body.location.clone();
+        
+        let location = SourceLocation::new(
+            start_location.start_line,
+            start_location.start_column,
+            end_location.end_line,
+            end_location.end_column
+        );
+
+        Ok(Expression::InlineCallbackExpression {
+            name,
+            params,
+            body,
+            location,
+        })
     }
 
     fn parse_callback_declaration(&mut self, start_location: SourceLocation) -> Result<Statement, ParseError> {

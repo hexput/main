@@ -204,9 +204,11 @@ pub enum Expression {
         arguments: Vec<Expression>,
         location: SourceLocation,
     },
-    #[serde(rename = "CALLBACK_REFERENCE")]
-    CallbackReference {
+    #[serde(rename = "INLINE_CALLBACK_EXPRESSION")]
+    InlineCallbackExpression {
         name: String,
+        params: Vec<String>,
+        body: Block,
         location: SourceLocation,
     },
     #[serde(rename = "ARRAY_EXPRESSION")]

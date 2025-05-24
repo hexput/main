@@ -287,6 +287,16 @@ fn optimize_expression(expr: Expression, runtime: &Runtime) -> Expression {
                 location,
             }
         },
+        Expression::InlineCallbackExpression { name, params, body, location } => {
+            let optimized_body = optimize_block(body, runtime);
+            
+            Expression::InlineCallbackExpression {
+                name,
+                params,
+                body: optimized_body,
+                location,
+            }
+        },
         Expression::UnaryExpression { operator, operand, location } => {
             let optimized_operand = Box::new(optimize_expression(*operand, runtime));
             Expression::UnaryExpression { 
@@ -298,7 +308,6 @@ fn optimize_expression(expr: Expression, runtime: &Runtime) -> Expression {
         Expression::StringLiteral { .. } |
         Expression::NumberLiteral { .. } |
         Expression::Identifier { .. } |
-        Expression::CallbackReference { .. } |
         Expression::BooleanLiteral { .. } |
         Expression::NullLiteral { .. } => {
             expr
