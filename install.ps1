@@ -10,8 +10,14 @@ param(
   [string]$ServiceName = "HexputRuntime",
   [string]$ServiceDisplayName = "Hexput Runtime",
   [string]$ServiceDescription = "Hexput Runtime Service",
-  [switch]$PreferService
+  [switch]$PreferService,
+  [switch]$Force
 )
+
+$VersionDir = Join-Path $env:ProgramData "Hexput"
+$VersionFile = Join-Path $VersionDir "version"
+
+Write-Verbose "Version file: $VersionFile"
 
 function Assert-Admin {
   $wi = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -26,7 +32,7 @@ function Assert-Admin {
   }
 }
 
-function Get-LatestAssetUrl {
+function Get-LatestReleaseInfo {
   param(
     [string]$Repository,
     [string]$Pattern
@@ -34,52 +40,76 @@ function Get-LatestAssetUrl {
   $uri = "https://api.github.com/repos/$Repository/releases/latest"
   $headers = @{ "User-Agent" = "hexput-installer" }
   try {
-    # Ensure TLS 1.2
-    [Net.ServicePointManager]::SecurityProtocol =
-      [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $release = Invoke-RestMethod -Uri $uri -Headers $headers -ErrorAction Stop
   } catch {
     throw "Failed to fetch GitHub release info: $($_.Exception.Message)"
   }
-
   if (-not $release.assets) {
     throw "No assets found on the latest release for $Repository."
   }
-
-  $asset =
-    $release.assets |
-    Where-Object { $_.browser_download_url -like "*$Pattern*" } |
-    Select-Object -First 1
-
+  $asset = $release.assets | Where-Object { $_.browser_download_url -like "*$Pattern*" } | Select-Object -First 1
   if (-not $asset) {
-    $assetNames =
-      ($release.assets | ForEach-Object { $_.name }) -join ", "
-    throw ("Could not find an asset matching pattern '*{0}*'. " +
-      "Available assets: {1}") -f $Pattern, $assetNames
+    $assetNames = ($release.assets | ForEach-Object { $_.name }) -join ", "
+    throw ("Could not find an asset matching pattern '*{0}*'. Available assets: {1}") -f $Pattern, $assetNames
   }
+  [pscustomobject]@{
+    Version = $release.tag_name
+    Url     = $asset.browser_download_url
+  }
+}
 
-  return $asset.browser_download_url
+function Stop-HexputProcesses {
+  param([string]$ExePath)
+  # Stop service if exists
+  $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+  if ($svc) {
+    if ($svc.Status -ne 'Stopped') {
+      Write-Host "Stopping service '$ServiceName'..."
+      try { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue } catch {}
+    }
+    # Wait briefly
+    Start-Sleep -Seconds 1
+  }
+  # Stop scheduled task if present
+  $task = schtasks.exe /Query /TN $ServiceName /FO LIST /V 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "Stopping scheduled task '$ServiceName' (if running)..."
+    try { schtasks.exe /End /TN $ServiceName 2>$null | Out-Null } catch {}
+  }
+  if (Test-Path -LiteralPath $ExePath) {
+    # Kill processes locking the file
+    Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq $ExePath) } | ForEach-Object {
+      Write-Host "Killing process $($_.Id) using $ExePath"
+      try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
+    }
+  }
 }
 
 function Install-Binary {
   param(
     [string]$Url,
     [string]$TargetDir,
-    [string]$TargetExeName
+    [string]$TargetExeName,
+    [string]$ExistingVersion,
+    [string]$NewVersion
   )
   if (-not (Test-Path -LiteralPath $TargetDir)) {
     New-Item -Path $TargetDir -ItemType Directory -Force | Out-Null
   }
-
   $targetPath = Join-Path $TargetDir $TargetExeName
+  Stop-HexputProcesses -ExePath $targetPath
+  $tmp = Join-Path ([IO.Path]::GetTempPath()) ("hexput-runtime-" + [guid]::NewGuid().ToString() + ".exe")
   try {
     Write-Host "Downloading: $Url"
-    Invoke-WebRequest -Uri $Url -OutFile $targetPath -UseBasicParsing
-    Unblock-File -LiteralPath $targetPath -ErrorAction SilentlyContinue
+    Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
+    Unblock-File -LiteralPath $tmp -ErrorAction SilentlyContinue
+    Write-Host "Replacing existing binary atomically..."
+    Move-Item -LiteralPath $tmp -Destination $targetPath -Force
   } catch {
+    if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
     throw "Failed to download/install binary: $($_.Exception.Message)"
   }
-
   return $targetPath
 }
 
@@ -192,13 +222,38 @@ function Install-ScheduledTaskFallback {
 Assert-Admin
 
 Write-Host "Fetching latest release info for $Repo..."
-$url = Get-LatestAssetUrl -Repository $Repo -Pattern $AssetPattern
-Write-Host "Latest release asset:"
-Write-Host "  $url"
+$releaseInfo = Get-LatestReleaseInfo -Repository $Repo -Pattern $AssetPattern
+$remoteVersion = $releaseInfo.Version
+$url = $releaseInfo.Url
+Write-Host "Latest version: $remoteVersion"
+Write-Host "Asset URL: $url"
 
-$exePath = Install-Binary -Url $url -TargetDir $InstallDir `
-  -TargetExeName $ExeName
-Write-Host "Installed to: $exePath"
+$localVersion = $null
+if (Test-Path -LiteralPath $VersionFile) {
+  try { $localVersion = Get-Content -LiteralPath $VersionFile -ErrorAction SilentlyContinue | Select-Object -First 1 } catch {}
+}
+if ($localVersion) { Write-Host "Local version: $localVersion" }
+
+if ($localVersion -and $remoteVersion -and ($localVersion -eq $remoteVersion) -and (-not $Force.IsPresent)) {
+  Write-Host "Local version is up-to-date. Skipping download. Use -Force to override." -ForegroundColor Yellow
+  $exePath = Join-Path $InstallDir $ExeName
+  if (-not (Test-Path -LiteralPath $exePath)) {
+    Write-Host "Binary missing locally; proceeding with fresh install..."
+    $exePath = Install-Binary -Url $url -TargetDir $InstallDir -TargetExeName $ExeName -ExistingVersion $localVersion -NewVersion $remoteVersion
+  }
+} else {
+  if ($Force.IsPresent -and $localVersion -eq $remoteVersion) {
+    Write-Host "Force flag specified; updating anyway." -ForegroundColor Yellow
+  } elseif ($localVersion -and $remoteVersion -and ($localVersion -ne $remoteVersion)) {
+    Write-Host "Updating from $localVersion to $remoteVersion..."
+  } else {
+    Write-Host "Performing fresh install..."
+  }
+  $exePath = Install-Binary -Url $url -TargetDir $InstallDir -TargetExeName $ExeName -ExistingVersion $localVersion -NewVersion $remoteVersion
+  if (-not (Test-Path -LiteralPath $VersionDir)) { New-Item -Path $VersionDir -ItemType Directory -Force | Out-Null }
+  if ($remoteVersion) { $remoteVersion | Out-File -FilePath $VersionFile -Encoding ASCII -Force }
+  Write-Host "Installed to: $exePath"
+}
 
 # Prefer installing as a Windows service; if it doesn't start, fall back
 # to a Scheduled Task that launches at boot and restarts on failure.
