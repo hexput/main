@@ -184,7 +184,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$BIN_PATH
+ExecStart=bash -c "$BIN_PATH"
 Restart=always
 RestartSec=5
 
