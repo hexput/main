@@ -39,10 +39,17 @@ fetch_release_info() {
     echo "❌ Failed to fetch release metadata"
     exit 1
   fi
-  REMOTE_VERSION=$(echo "$api_json" | grep -m1 '"tag_name"' | cut -d '"' -f4)
-  DOWNLOAD_URL=$(echo "$api_json" | grep "browser_download_url" | grep "$ARCH" | cut -d '"' -f 4 | head -n1)
+  if command -v jq >/dev/null 2>&1; then
+    REMOTE_VERSION=$(echo "$api_json" | jq -r '.tag_name // empty')
+    DOWNLOAD_URL=$(echo "$api_json" | jq -r --arg arch "$ARCH" '.assets[] | select(.browser_download_url | contains($arch)) | .browser_download_url' | head -n1)
+  else
+    # Fallback parsing without jq (more fragile)
+    REMOTE_VERSION=$(printf '%s\n' "$api_json" | grep -E '"tag_name"' | head -n1 | sed -E 's/.*"tag_name" *: *"([^"]+)".*/\1/')
+    DOWNLOAD_URL=$(printf '%s\n' "$api_json" | grep 'browser_download_url' | grep "$ARCH" | head -n1 | sed -E 's/.*"(https:[^"]+)".*/\1/')
+  fi
   if [ -z "${DOWNLOAD_URL:-}" ]; then
     echo "❌ Could not find a release asset for architecture: $ARCH"
+    echo "(Tip: assets in release must contain substring '$ARCH')"
     exit 1
   fi
   if [ -z "${REMOTE_VERSION:-}" ]; then
@@ -90,7 +97,7 @@ download_and_deploy_binary() {
   local tmpfile
   tmpfile=$(mktemp /tmp/hexput-runtime.XXXXXX)
   trap 'rm -f "$tmpfile"' EXIT
-  if ! curl -L --fail "$DOWNLOAD_URL" -o "$tmpfile"; then
+  if ! curl -L --fail -H "User-Agent: hexput-installer" "$DOWNLOAD_URL" -o "$tmpfile"; then
     echo "❌ Download failed"
     exit 1
   fi
@@ -99,16 +106,17 @@ download_and_deploy_binary() {
     echo "❌ Downloaded file is empty"
     exit 1
   fi
+  # Validate temp binary BEFORE replacing
+  if ! validate_temp_binary "$tmpfile"; then
+    echo "❌ Validation of downloaded artifact failed (not installing)."
+    return 1
+  fi
   chmod +x "$tmpfile"
   echo "📦 Replacing $BIN_PATH atomically..."
   sudo mv "$tmpfile" "$BIN_PATH"
   sudo chmod 0755 "$BIN_PATH" || true
   sudo chown root:root "$BIN_PATH" || true
   trap - EXIT
-  validate_binary || {
-    echo "❌ Binary validation failed"
-    exit 1
-  }
   # Persist version
   if [ -n "${REMOTE_VERSION:-}" ]; then
     if [ ! -d "$VERSION_STATE_DIR" ]; then
@@ -136,6 +144,20 @@ validate_binary() {
     return 1
   fi
   return 0
+}
+
+validate_temp_binary() {
+  # Arg: path to temp file
+  local f="$1"
+  # Magic bytes check for ELF (0x7f 'E' 'L' 'F')
+  if head -c 4 "$f" | grep -q $'\x7fELF'; then
+    return 0
+  fi
+  # Show first few bytes for debugging (safe printable)
+  echo "---- File head (hex) ----"
+  hexdump -C "$f" | head -n3 || true
+  echo "-------------------------"
+  return 1
 }
 
 fetch_release_info
