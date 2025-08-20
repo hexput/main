@@ -55,6 +55,8 @@ fetch_release_info() {
   if [ -z "${REMOTE_VERSION:-}" ]; then
     echo "⚠️  Could not determine remote version (tag_name). Version tracking may be skipped."
   fi
+  echo "🔍 Resolved remote version: ${REMOTE_VERSION:-unknown}"
+  echo "🔍 Download URL: $DOWNLOAD_URL"
 }
 
 get_local_version() {
