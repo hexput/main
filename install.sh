@@ -29,6 +29,35 @@ USAGE
   esac
 done
 
+REMOTE_VERSION=""
+DOWNLOAD_URL=""
+
+fetch_release_info() {
+  echo "📡 Fetching latest release info for $REPO..."
+  local api_json
+  if ! api_json=$(curl -fsSL -H "User-Agent: hexput-installer" "https://api.github.com/repos/$REPO/releases/latest"); then
+    echo "❌ Failed to fetch release metadata"
+    exit 1
+  fi
+  REMOTE_VERSION=$(echo "$api_json" | grep -m1 '"tag_name"' | cut -d '"' -f4)
+  DOWNLOAD_URL=$(echo "$api_json" | grep "browser_download_url" | grep "$ARCH" | cut -d '"' -f 4 | head -n1)
+  if [ -z "${DOWNLOAD_URL:-}" ]; then
+    echo "❌ Could not find a release asset for architecture: $ARCH"
+    exit 1
+  fi
+  if [ -z "${REMOTE_VERSION:-}" ]; then
+    echo "⚠️  Could not determine remote version (tag_name). Version tracking may be skipped."
+  fi
+}
+
+get_local_version() {
+  if [ -f "$VERSION_FILE" ]; then
+    LOCAL_VERSION=$(cat "$VERSION_FILE" 2>/dev/null || true)
+  else
+    LOCAL_VERSION=""
+  fi
+}
+
 stop_running_instances() {
   # Stop systemd service if active
   if command -v systemctl >/dev/null 2>&1; then
@@ -56,56 +85,31 @@ stop_running_instances() {
   fi
 }
 
-download_latest_binary() {
-  echo "📡 Fetching latest release info for $REPO..."
-  local api_json
-  if ! api_json=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest"); then
-    echo "❌ Failed to fetch release metadata"
-    exit 1
-  fi
-
-  # Extract tag_name and asset URL
-  REMOTE_VERSION=$(echo "$api_json" | grep -m1 '"tag_name"' | cut -d '"' -f4)
-  local download_url
-  download_url=$(echo "$api_json" | grep "browser_download_url" | grep "$ARCH" | cut -d '"' -f 4 | head -n1)
-
-  if [ -z "${download_url:-}" ]; then
-    echo "❌ Could not find a release asset for architecture: $ARCH"
-    exit 1
-  fi
-  if [ -z "${REMOTE_VERSION:-}" ]; then
-    echo "⚠️  Could not determine remote version (tag_name). Proceeding but version tracking may be skipped."
-  fi
-
-  # Compare with local version if exists
-  if [ -f "$VERSION_FILE" ]; then
-    LOCAL_VERSION=$(cat "$VERSION_FILE" 2>/dev/null || true)
-  else
-    LOCAL_VERSION=""
-  fi
-
-  if [ -n "${REMOTE_VERSION:-}" ] && [ -n "${LOCAL_VERSION:-}" ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$FORCE_UPDATE" = false ]; then
-    echo "ℹ️  Local version ($LOCAL_VERSION) is already the latest ($REMOTE_VERSION). Skipping update. Use --force to override."
-    SKIP_DOWNLOAD=true
-    return 0
-  fi
-
-  echo "Latest release asset found (version: ${REMOTE_VERSION:-unknown}):"
-  echo "$download_url"
-
-  # Download to temp file first to avoid ETXTBUSY, then atomic move
+download_and_deploy_binary() {
+  echo "⬇️  Downloading binary (version: ${REMOTE_VERSION:-unknown})..."
   local tmpfile
   tmpfile=$(mktemp /tmp/hexput-runtime.XXXXXX)
   trap 'rm -f "$tmpfile"' EXIT
-  echo "⬇️  Downloading binary to temp file..."
-  curl -L --fail "$download_url" -o "$tmpfile"
+  if ! curl -L --fail "$DOWNLOAD_URL" -o "$tmpfile"; then
+    echo "❌ Download failed"
+    exit 1
+  fi
+  # Basic integrity checks
+  if [ ! -s "$tmpfile" ]; then
+    echo "❌ Downloaded file is empty"
+    exit 1
+  fi
   chmod +x "$tmpfile"
   echo "📦 Replacing $BIN_PATH atomically..."
   sudo mv "$tmpfile" "$BIN_PATH"
-  # Remove trap for tmpfile since it has been moved
+  sudo chmod 0755 "$BIN_PATH" || true
+  sudo chown root:root "$BIN_PATH" || true
   trap - EXIT
-
-  # Write version file
+  validate_binary || {
+    echo "❌ Binary validation failed"
+    exit 1
+  }
+  # Persist version
   if [ -n "${REMOTE_VERSION:-}" ]; then
     if [ ! -d "$VERSION_STATE_DIR" ]; then
       sudo mkdir -p "$VERSION_STATE_DIR"
@@ -114,17 +118,42 @@ download_latest_binary() {
   fi
 }
 
-# Ensure directory exists (normally /usr/local/bin already exists)
-if [ ! -d "$(dirname "$BIN_PATH")" ]; then
-  echo "📁 Creating directory $(dirname "$BIN_PATH")"
-  sudo mkdir -p "$(dirname "$BIN_PATH")"
+validate_binary() {
+  if [ ! -x "$BIN_PATH" ]; then
+    echo "❌ Binary not executable after install"
+    return 1
+  fi
+  # If 'file' is available, ensure it's an ELF binary
+  if command -v file >/dev/null 2>&1; then
+    if ! file "$BIN_PATH" | grep -q "ELF 64-bit"; then
+      echo "❌ Installed file does not appear to be an ELF 64-bit binary"
+      return 1
+    fi
+  fi
+  # Try running --version (should exit 0 quickly)
+  if ! "$BIN_PATH" --version >/dev/null 2>&1; then
+    echo "❌ Executing binary for version check failed"
+    return 1
+  fi
+  return 0
+}
+
+fetch_release_info
+get_local_version
+
+if [ -n "${REMOTE_VERSION:-}" ] && [ -n "${LOCAL_VERSION:-}" ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$FORCE_UPDATE" = false ]; then
+  echo "ℹ️  Already up-to-date (version $LOCAL_VERSION). Use --force to reinstall."
+  UP_TO_DATE=1
+else
+  # Ensure directory exists (normally /usr/local/bin already exists)
+  if [ ! -d "$(dirname "$BIN_PATH")" ]; then
+    echo "📁 Creating directory $(dirname "$BIN_PATH")"
+    sudo mkdir -p "$(dirname "$BIN_PATH")"
+  fi
+  stop_running_instances
+  download_and_deploy_binary
+  UP_TO_DATE=0
 fi
-
-# Stop any running instances before replacement to avoid 'Text file busy'.
-stop_running_instances
-
-SKIP_DOWNLOAD=false
-download_latest_binary
 
 # Create/overwrite systemd service
 echo "🛠 Writing systemd service file..."
@@ -151,8 +180,12 @@ if command -v systemctl >/dev/null 2>&1; then
   # Check if service exists now (we just wrote it)
   if systemctl list-unit-files | grep -q "^$SERVICE_NAME"; then
     if systemctl is-active --quiet "$SERVICE_NAME"; then
-      echo "🔄 Service is running — restarting..."
-      sudo systemctl restart "$SERVICE_NAME"
+      if [ "${UP_TO_DATE:-0}" -eq 1 ]; then
+        echo "✅ Service already running with latest version (no restart needed)."
+      else
+        echo "🔄 Service is running — restarting..."
+        sudo systemctl restart "$SERVICE_NAME"
+      fi
     else
       echo "▶️ Service installed — enabling and starting..."
       sudo systemctl enable "$SERVICE_NAME"
