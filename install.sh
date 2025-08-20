@@ -34,19 +34,15 @@ DOWNLOAD_URL=""
 
 fetch_release_info() {
   echo "📡 Fetching latest release info for $REPO..."
-  local api_json
-  if ! api_json=$(curl -fsSL -H "User-Agent: hexput-installer" "https://api.github.com/repos/$REPO/releases/latest"); then
-    echo "❌ Failed to fetch release metadata"
-    exit 1
-  fi
-  if command -v jq >/dev/null 2>&1; then
-    REMOTE_VERSION=$(echo "$api_json" | jq -r '.tag_name // empty')
-    DOWNLOAD_URL=$(echo "$api_json" | jq -r --arg arch "$ARCH" '.assets[] | select(.browser_download_url | contains($arch)) | .browser_download_url' | head -n1)
-  else
-    # Fallback parsing without jq (more fragile)
-    REMOTE_VERSION=$(printf '%s\n' "$api_json" | grep -E '"tag_name"' | head -n1 | sed -E 's/.*"tag_name" *: *"([^"]+)".*/\1/')
-    DOWNLOAD_URL=$(printf '%s\n' "$api_json" | grep 'browser_download_url' | grep "$ARCH" | head -n1 | sed -E 's/.*"(https:[^"]+)".*/\1/')
-  fi
+  # Fetch remote version (separate call for clarity)
+  REMOTE_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep -m1 '"tag_name"' \
+    | cut -d '"' -f4)
+  # EXACT requested pattern for download URL resolution
+  DOWNLOAD_URL=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep "browser_download_url" \
+    | grep "$ARCH" \
+    | cut -d '"' -f 4)
   if [ -z "${DOWNLOAD_URL:-}" ]; then
     echo "❌ Could not find a release asset for architecture: $ARCH"
     echo "(Tip: assets in release must contain substring '$ARCH')"
