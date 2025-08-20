@@ -1695,6 +1695,16 @@ async fn evaluate_expression(
             let mut obj = serde_json::Map::new();
 
             for property in properties {
+                // Disallow creating objects with the forbidden key at construction time
+                if property.key == FORBIDDEN_KEY {
+                    return Err(RuntimeError::with_location(
+                        format!(
+                            "Key '{}' is forbidden and cannot be used in object literals.",
+                            FORBIDDEN_KEY
+                        ),
+                        location,
+                    ));
+                }
                 let value = match Box::pin(evaluate_expression(
                     property.value,
                     context,
