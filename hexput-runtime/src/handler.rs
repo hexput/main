@@ -1519,14 +1519,6 @@ async fn evaluate_expression(
                 Err(e) => return Err(add_location_if_needed(e, &location)),
             };
 
-            // Check if object contains forbidden value - if so, deny all property access
-            if contains_forbidden_value(&obj_value) {
-                return Err(RuntimeError::with_location(
-                    "Cannot access properties of object containing restricted data. Use as reference only.".to_string(),
-                    location,
-                ));
-            }
-
             if !computed {
                 if let Some(prop) = property {
                     if prop == FORBIDDEN_KEY {
@@ -1745,14 +1737,6 @@ async fn evaluate_expression(
                 Ok(val) => val,
                 Err(e) => return Err(add_location_if_needed(e, &location)),
             };
-
-            // Check if object contains forbidden value - if so, deny all method calls
-            if contains_forbidden_value(&obj) {
-                return Err(RuntimeError::with_location(
-                    "Cannot call methods on object containing restricted data. Use as reference only.".to_string(),
-                    location,
-                ));
-            }
 
             let method_name = if !computed {
                 if let Some(prop) = property {
@@ -2028,14 +2012,6 @@ async fn evaluate_expression(
                 Ok(val) => val,
                 Err(e) => return Err(add_location_if_needed(e, &location)),
             };
-
-            // Check if object contains forbidden value - if so, deny all property assignment
-            if contains_forbidden_value(&obj_check) {
-                return Err(RuntimeError::with_location(
-                    "Cannot modify properties of object containing restricted data. Use as reference only.".to_string(),
-                    location,
-                ));
-            }
 
             let value_to_assign = match Box::pin(evaluate_expression(
                 *value,

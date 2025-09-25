@@ -16,14 +16,6 @@ pub fn execute_builtin_method(
     location: &SourceLocation,
     callback_executor: Option<&CallbackExecutor>,
 ) -> Result<Option<Value>, RuntimeError> {
-    // Check if object contains forbidden value - if so, deny all method calls
-    if contains_forbidden_value(object) {
-        return Err(RuntimeError::with_location(
-            "Cannot call methods on object containing restricted data. Use as reference only.".to_string(),
-            location.clone(),
-        ));
-    }
-
     match object {
         Value::String(s) => execute_string_method(s, method_name, args, location),
         Value::Array(arr) => execute_array_method(arr, method_name, args, location, callback_executor),
