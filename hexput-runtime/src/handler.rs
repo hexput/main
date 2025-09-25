@@ -1998,21 +1998,6 @@ async fn evaluate_expression(
             value,
             ..
         } => {
-            // First evaluate the object to check for forbidden values
-            let obj_check = match Box::pin(evaluate_expression(
-                (*object).clone(),
-                context,
-                secret_context,
-                function_calls.clone(),
-                function_validations.clone(),
-                send_message,
-            ))
-            .await
-            {
-                Ok(val) => val,
-                Err(e) => return Err(add_location_if_needed(e, &location)),
-            };
-
             let value_to_assign = match Box::pin(evaluate_expression(
                 *value,
                 context,
@@ -2259,20 +2244,6 @@ async fn evaluate_expression(
         Expression::NullLiteral { .. } => Ok(serde_json::Value::Null),
     }
 }
-
-fn contains_forbidden_value(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Object(map) => {
-            map.contains_key(FORBIDDEN_KEY) || map.values().any(contains_forbidden_value)
-        }
-        serde_json::Value::Array(arr) => {
-            arr.iter().any(contains_forbidden_value)
-        }
-        _ => false,
-    }
-}
-
-// Remove the generate_callback_hash function as we use a constant now
 
 async fn execute_callback(
     callback: CallbackFunction,

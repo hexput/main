@@ -620,18 +620,6 @@ fn extract_callback_name(value: &Value) -> Option<String> {
     None
 }
 
-fn contains_forbidden_value(value: &Value) -> bool {
-    match value {
-        Value::Object(map) => {
-            map.contains_key(FORBIDDEN_KEY) || map.values().any(contains_forbidden_value)
-        }
-        Value::Array(arr) => {
-            arr.iter().any(contains_forbidden_value)
-        }
-        _ => false,
-    }
-}
-
 fn execute_object_method(
     object: &Map<String, Value>,
     method_name: &str,
