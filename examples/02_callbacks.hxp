@@ -1,0 +1,28 @@
+// Callback (function) definition and usage
+
+cb multiply(a, b) {
+  res a * b;
+}
+
+cb factorial(n) {
+  if n == 0 {
+    res 1;
+  }
+  
+  vl result = 1;
+  vl i = 1;
+  
+  loop x in [1, 2, 3, 4, 5] {
+    if x > n {
+      end;
+    }
+    result = result * x;
+  }
+  
+  res result;
+}
+
+vl result1 = multiply(6, 7);
+vl result2 = factorial(5);
+
+res result2;

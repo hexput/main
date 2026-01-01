@@ -1,0 +1,62 @@
+[package]
+name = "hexput"
+version = "2.0.0"
+edition = "2021"
+authors = ["Hexput Contributors"]
+description = "A deterministic, synchronous, sandboxed RPC language runtime"
+license = "MIT OR Apache-2.0"
+default-run = "hexput"
+
+[[bin]]
+name = "hexput"
+path = "src/main.rs"
+
+[[bin]]
+name = "hexput-service"
+path = "src/bin/service.rs"
+required-features = ["windows-service"]
+
+[dependencies]
+# Async runtime (internal implementation detail)
+tokio = { version = "1.42", features = ["full"] }
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# WebSocket support
+tokio-tungstenite = "0.28"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utility
+indexmap = "2.7"
+uuid = { version = "1.11", features = ["v4"] }
+
+# Windows service support
+[target.'cfg(windows)'.dependencies]
+windows-service = { version = "0.8", optional = true }
+
+[features]
+windows-service = ["dep:windows-service"]
+
+[dev-dependencies]
+criterion = "0.8.1"
+
+[[bench]]
+name = "runtime_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+
+[profile.test]
+opt-level = 1

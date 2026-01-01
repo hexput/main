@@ -1,0 +1,10 @@
+// Basic variable declarations and arithmetic
+
+vl x = 10;
+vl y = 20;
+vl sum = x + y;
+vl product = x * y;
+vl difference = y - x;
+vl quotient = y / x;
+
+res sum;
