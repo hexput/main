@@ -1,6 +1,6 @@
 use hexput::rpc::protocol::{
-    Message, CompileBytecode, CompileBytecodeResponse, BytecodeExecutionStart,
-    ExecutionResult, ResponseResult,
+    Message, CompileBytecode, BytecodeExecutionStart,
+    ResponseResult,
 };
 use serde_json::json;
 use std::time::Duration;

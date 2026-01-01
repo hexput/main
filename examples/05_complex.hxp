@@ -46,8 +46,9 @@ vl options = {
 };
 
 // Process each format using our callback
-vl results = [];
-vl index = 0;
+// Store results in an object instead of array (hexput doesn't support dynamic array growth)
+vl results = {};
+vl processed = 0;
 
 loop format in formats {
   // Skip XML format
@@ -58,32 +59,31 @@ loop format in formats {
   // Process the current format
   vl processedItem = transformData(format, options);
   
-  // Store in results array
-  results[index] = processedItem;
+  // Store in results object using format name as key
+  results[format] = processedItem;
   
-  // Calculate score based on format length
-  vl score = 0;
-  vl nameLength = 0;
-  
-  // Simulate complex calculation
-  loop char in format {
-    nameLength = nameLength + 1;
-    score = score + nameLength * 2;
+  // Calculate score (simplified - no char loop since strings aren't iterable)
+  vl score = 10;
+  if format == "json" {
+    score = 20;
+  }
+  if format == "csv" {
+    score = 15;
   }
   
   // Add score to results
-  results[index].score = score;
+  results[format].score = score;
   
   // Add format-specific metadata
   if format == "json" {
-    results[index].metadata = {
+    results[format].metadata = {
       parser: "fastjson",
       popularity: 10 * 4 / 2
     };
   }
   
-  // Move to next index
-  index = index + 1;
+  // Increment counter
+  processed = processed + 1;
   
   // End early if we find CSV
   if format == "csv" {
@@ -91,15 +91,15 @@ loop format in formats {
   }
 }
 
-// Get all keys from first result for analytics
-vl firstResultKeys = keysof results[0];
+// Get all keys from results for analytics
+vl resultKeys = keysof results;
 
 // Build a summary of our processing
 vl summary = {
-  processed: index,
+  processed: processed,
   timestamp: 987654321,
   configuration: config.settings,
-  keys: firstResultKeys,
+  keys: resultKeys,
   success: true
 };
 
@@ -111,5 +111,7 @@ vl output = {
   config: config
 };
 
-// Output is implicitly returned
-res output;
+if true {
+  // Output is implicitly returned
+  res output;
+}
