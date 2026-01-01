@@ -1,6 +1,7 @@
 //! RPC protocol definitions
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// RPC message types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +25,12 @@ pub enum Message {
     RemoteMethodCall(RemoteMethodCall),
     /// Client-to-server response with method execution result
     RemoteMethodResult(RemoteMethodResult),
+    /// Client-to-server request to compile source to bytecode
+    CompileBytecode(CompileBytecode),
+    /// Server-to-client response with compiled bytecode
+    CompileBytecodeResponse(CompileBytecodeResponse),
+    /// Client-to-server request to execute bytecode
+    BytecodeExecutionStart(BytecodeExecutionStart),
 }
 
 /// RPC request
@@ -241,4 +248,33 @@ impl Response {
             result: ResponseResult::Error { message },
         }
     }
+}
+
+/// Client-to-server: request to compile source code to bytecode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompileBytecode {
+    pub request_id: String,
+    pub id: String,
+    pub source: String,
+}
+
+/// Server-to-client: compiled bytecode as base64-encoded bincode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompileBytecodeResponse {
+    pub response_id: String,
+    pub id: String,
+    /// Base64-encoded bincode serialized AST, or error message prefixed with "error: "
+    pub bytecode: String,
+}
+
+/// Client-to-server: execute pre-compiled bytecode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BytecodeExecutionStart {
+    pub request_id: String,
+    pub id: String,
+    pub context_id: String,
+    /// Base64-encoded bincode serialized AST
+    pub bytecode: String,
+    #[serde(default)]
+    pub global_variables: HashMap<String, serde_json::Value>,
 }

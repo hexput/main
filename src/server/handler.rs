@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, oneshot};
 use serde_json::Value as JsonValue;
 
-use crate::rpc::protocol::{Message, Request, Response, ResponseResult, ExecutionStart, ExecutionResult, CodeRegister, CodeRegisterResponse, CachedExecutionStart, RegisterFunction, RegisterMethod, RegisterResponse, RemoteFunctionCall, RemoteMethodCall};
+use crate::rpc::protocol::{Message, Request, Response, ResponseResult, ExecutionStart, ExecutionResult, CodeRegister, CodeRegisterResponse, CachedExecutionStart, RegisterFunction, RegisterMethod, RegisterResponse, RemoteFunctionCall, RemoteMethodCall, CompileBytecode, CompileBytecodeResponse, BytecodeExecutionStart};
 use crate::rpc::dispatcher::Dispatcher;
 use crate::runtime::{Value, Context as RuntimeContext, rpc_handler::RpcHandler};
 use crate::sandbox::Limits;
@@ -195,6 +195,14 @@ pub async fn handle_message(
             Some(Message::RegisterResponse(handle_register_method(reg_method, manager).await))
         }
         
+        Message::CompileBytecode(compile_req) => {
+            Some(Message::CompileBytecodeResponse(handle_compile_bytecode(compile_req).await))
+        }
+        
+        Message::BytecodeExecutionStart(bytecode_exec) => {
+            Some(Message::ExecutionResult(handle_bytecode_execution_start(bytecode_exec, manager, pending_calls, message_tx).await))
+        }
+        
         Message::Response(_) => {
             // Client shouldn't send Response, but we'll ignore it
             None
@@ -207,6 +215,11 @@ pub async fn handle_message(
         
         Message::CodeRegisterResponse(_) => {
             // Client shouldn't send CodeRegisterResponse, ignore it
+            None
+        }
+        
+        Message::CompileBytecodeResponse(_) => {
+            // Client shouldn't send CompileBytecodeResponse, ignore it
             None
         }
         
@@ -725,5 +738,172 @@ async fn handle_register_method(
                 "status": "registered"
             }),
         },
+    }
+}
+
+/// Handle bytecode compilation request
+async fn handle_compile_bytecode(
+    compile_req: CompileBytecode,
+) -> CompileBytecodeResponse {
+    let request_id = compile_req.request_id.clone();
+    let id = compile_req.id.clone();
+    
+    // Parse the script
+    let ast = match crate::language::parse(&compile_req.source) {
+        Ok(ast) => ast,
+        Err(e) => {
+            // Return error as bytecode field (prefixed with "error: ")
+            return CompileBytecodeResponse {
+                response_id: request_id,
+                id,
+                bytecode: format!("error: {}", e),
+            };
+        }
+    };
+    
+    // Serialize AST to bincode
+    let bincode_data = match bincode::serialize(&ast) {
+        Ok(data) => data,
+        Err(e) => {
+            return CompileBytecodeResponse {
+                response_id: request_id,
+                id,
+                bytecode: format!("error: Failed to serialize AST: {}", e),
+            };
+        }
+    };
+    
+    // Encode to base64
+    let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bincode_data);
+    
+    CompileBytecodeResponse {
+        response_id: request_id,
+        id,
+        bytecode: base64_data,
+    }
+}
+
+/// Handle bytecode execution start by deserializing and executing pre-compiled AST
+async fn handle_bytecode_execution_start(
+    bytecode_exec: BytecodeExecutionStart,
+    manager: &Arc<RwLock<ContextManager>>,
+    pending_calls: &crate::server::PendingCalls,
+    message_tx: &mpsc::UnboundedSender<Message>,
+) -> ExecutionResult {
+    let request_id = bytecode_exec.request_id.clone();
+    let id = bytecode_exec.id.clone();
+    let context_id = bytecode_exec.context_id.clone();
+    
+    // Decode base64
+    let bincode_data = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &bytecode_exec.bytecode) {
+        Ok(data) => data,
+        Err(e) => {
+            return ExecutionResult {
+                response_id: request_id,
+                id,
+                context_id,
+                result: ResponseResult::Error {
+                    message: format!("Failed to decode base64: {}", e),
+                },
+            };
+        }
+    };
+    
+    // Deserialize AST from bincode
+    let ast: crate::language::ast::Ast = match bincode::deserialize(&bincode_data) {
+        Ok(ast) => ast,
+        Err(e) => {
+            return ExecutionResult {
+                response_id: request_id,
+                id,
+                context_id,
+                result: ResponseResult::Error {
+                    message: format!("Failed to deserialize AST: {}", e),
+                },
+            };
+        }
+    };
+    
+    // Get or create context registry
+    let registry = {
+        let mut mgr = manager.write().await;
+        mgr.get_or_create_context(&context_id).await
+    };
+    
+    // Create capability set from registry's allowed functions/methods
+    let capabilities = {
+        let reg = registry.read().await;
+        let allowed_functions = reg.get_allowed_functions(&context_id);
+        let mut cap_set = CapabilitySet::new();
+        for func_name in allowed_functions {
+            cap_set.grant(Capability::CallRemote(func_name));
+        }
+        cap_set
+    };
+    
+    // Create RPC handler
+    let rpc_handler = Arc::new(ConnectionRpcHandler::new(
+        message_tx.clone(),
+        pending_calls.clone(),
+    ));
+    
+    // Create execution context with RPC handler
+    let mut runtime_ctx = RuntimeContext::with_rpc_handler(
+        Limits::default(),
+        capabilities,
+        rpc_handler,
+    );
+    
+    // Inject global variables
+    let globals_json = JsonValue::Object(bytecode_exec.global_variables.into_iter().collect());
+    if let Err(e) = inject_globals(&mut runtime_ctx, globals_json) {
+        return ExecutionResult {
+            response_id: request_id,
+            id,
+            context_id,
+            result: ResponseResult::Error {
+                message: format!("Global injection error: {}", e),
+            },
+        };
+    }
+    
+    // Execute the AST in a blocking task
+    let exec_result = tokio::task::spawn_blocking(move || {
+        crate::runtime::execute(&ast, &mut runtime_ctx)
+    }).await;
+    
+    match exec_result {
+        Ok(Ok(value)) => {
+            // Convert runtime Value to JSON
+            let json_value = runtime_value_to_json(&value);
+            ExecutionResult {
+                response_id: request_id,
+                id,
+                context_id,
+                result: ResponseResult::Success {
+                    value: json_value,
+                },
+            }
+        }
+        Ok(Err(e)) => {
+            ExecutionResult {
+                response_id: request_id,
+                id,
+                context_id,
+                result: ResponseResult::Error {
+                    message: format!("{}", e),
+                },
+            }
+        }
+        Err(e) => {
+            ExecutionResult {
+                response_id: request_id,
+                id,
+                context_id,
+                result: ResponseResult::Error {
+                    message: format!("Execution panic: {}", e),
+                },
+            }
+        }
     }
 }

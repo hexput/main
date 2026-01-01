@@ -1,9 +1,10 @@
 //! Abstract Syntax Tree representation
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Source location for error reporting
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -22,13 +23,13 @@ impl Span {
 }
 
 /// Top-level AST node
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ast {
     pub statements: Vec<Statement>,
 }
 
 /// Statement types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Statement {
     /// Variable declaration: vl x = expr;
     VarDecl {
@@ -95,7 +96,7 @@ pub enum Statement {
 }
 
 /// Assignment targets
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AssignTarget {
     /// Simple variable: x
     Identifier(String),
@@ -114,7 +115,7 @@ pub enum AssignTarget {
 }
 
 /// Expression types with optional span for error reporting
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expression {
     /// Number literal
     Number(f64),
@@ -186,7 +187,7 @@ pub enum Expression {
 }
 
 /// Binary operators
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinaryOp {
     // Arithmetic
     Add,      // +
@@ -205,7 +206,7 @@ pub enum BinaryOp {
 }
 
 /// Unary operators
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnaryOp {
     Neg,      // - (negation)
     Not,      // ! (logical not)
@@ -213,7 +214,7 @@ pub enum UnaryOp {
 }
 
 /// Logical operators (short-circuiting)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogicalOp {
     And,      // &&
     Or,       // ||
