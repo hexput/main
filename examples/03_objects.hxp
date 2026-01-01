@@ -1,0 +1,26 @@
+// Working with objects and arrays
+
+vl person = {
+  name: "Alice",
+  age: 30,
+  email: "alice@example.com",
+  active: true
+};
+
+vl scores = [85, 92, 78, 90, 88];
+
+// Access properties
+vl personName = person.name;
+vl firstScore = scores[0];
+
+// Get object keys
+vl keys = keysof person;
+
+// Build a result object
+vl result = {
+  userName: personName,
+  topScore: firstScore,
+  fieldCount: 4
+};
+
+res result;

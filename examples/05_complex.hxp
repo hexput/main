@@ -1,0 +1,117 @@
+// Define a complex object with nested properties
+vl config = {
+  name: "DataProcessor",
+  version: 1.5,
+  enabled: true,
+  settings: {
+    parallel: true,
+    maxThreads: 8,
+    timeout: 5000
+  },
+  supportedFormats: ["json", "csv", "xml"]
+};
+
+// Define a complex transformer callback
+cb transformData(item, options) {
+  vl result = {};
+  
+  if options.uppercase {
+    result.value = item + " - PROCESSED";
+  } else {
+    result.value = item + " - processed";
+    result.original = item;
+  }
+  
+  result.timestamp = 1234567890;
+  
+  res result;
+}
+
+// Define a helper callback
+cb getConfigValue(key, defaultValue) {
+  vl value = config[key];
+  
+  if value == "undefined" {
+    res defaultValue;
+  }
+  
+  res value;
+}
+
+// Get configuration and prepare data
+vl formats = config.supportedFormats;
+vl options = {
+  uppercase: config.settings.parallel == true,
+  includeMetadata: true
+};
+
+// Process each format using our callback
+// Store results in an object instead of array (hexput doesn't support dynamic array growth)
+vl results = {};
+vl processed = 0;
+
+loop format in formats {
+  // Skip XML format
+  if format == "xml" {
+    continue;
+  }
+  
+  // Process the current format
+  vl processedItem = transformData(format, options);
+  
+  // Store in results object using format name as key
+  results[format] = processedItem;
+  
+  // Calculate score (simplified - no char loop since strings aren't iterable)
+  vl score = 10;
+  if format == "json" {
+    score = 20;
+  }
+  if format == "csv" {
+    score = 15;
+  }
+  
+  // Add score to results
+  results[format].score = score;
+  
+  // Add format-specific metadata
+  if format == "json" {
+    results[format].metadata = {
+      parser: "fastjson",
+      popularity: 10 * 4 / 2
+    };
+  }
+  
+  // Increment counter
+  processed = processed + 1;
+  
+  // End early if we find CSV
+  if format == "csv" {
+    end;
+  }
+}
+
+// Get all keys from results for analytics
+vl resultKeys = keysof results;
+
+// Build a summary of our processing
+vl summary = {
+  processed: processed,
+  timestamp: 987654321,
+  configuration: config.settings,
+  keys: resultKeys,
+  success: true
+};
+
+// Add everything to final output object
+vl output = {
+  status: "complete",
+  results: results,
+  summary: summary,
+  config: config
+};
+
+if true {
+  // Output is implicitly returned
+  res output;
+}
