@@ -676,13 +676,13 @@ fn test_parse_number_literals() {
     }
 
     // Float
-    let ast = parse("vl x = 3.14;").unwrap();
+    let ast = parse("vl x = 1.14;").unwrap();
     match &ast.statements[0] {
         Statement::VarDecl {
             value: Expression::Number(n),
             ..
         } => {
-            assert_eq!(*n, 3.14);
+            assert_eq!(*n, 1.14);
         }
         _ => panic!("Expected float"),
     }
