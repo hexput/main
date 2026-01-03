@@ -13,6 +13,11 @@ on:
         description: 'Development version (e.g., dev-20240103)'
         required: false
 
+permissions:
+  contents: write
+  packages: read
+  actions: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -20,6 +25,8 @@ jobs:
   create-release:
     name: Create Development Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.version.outputs.version }}
