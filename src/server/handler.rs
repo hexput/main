@@ -1,9 +1,12 @@
 //! Message handler for processing RPC requests and executing scripts
 
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use std::sync::Arc;
+use std::collections::HashMap;
+
+/// Type alias for pending RPC call responses
+type PendingCalls = Arc<RwLock<HashMap<String, oneshot::Sender<Result<JsonValue, String>>>>>;
 
 use super::context_manager::ContextManager;
 use crate::rpc::dispatcher::Dispatcher;
@@ -20,14 +23,14 @@ use crate::semantic::capabilities::{Capability, CapabilitySet};
 /// RPC handler that sends messages to client and waits for responses
 pub struct ConnectionRpcHandler {
     message_tx: mpsc::UnboundedSender<Message>,
-    pending_calls: Arc<RwLock<HashMap<String, oneshot::Sender<Result<JsonValue, String>>>>>,
+    pending_calls: PendingCalls,
     request_counter: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ConnectionRpcHandler {
     pub fn new(
         message_tx: mpsc::UnboundedSender<Message>,
-        pending_calls: Arc<RwLock<HashMap<String, oneshot::Sender<Result<JsonValue, String>>>>>,
+        pending_calls: PendingCalls,
     ) -> Self {
         Self {
             message_tx,
