@@ -7,16 +7,16 @@ use super::error::{SyntaxError, SyntaxResult};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
-    Vl,        // vl
-    Cb,        // cb
-    Res,       // res
-    Loop,      // loop
-    In,        // in
-    If,        // if
-    Else,      // else
-    Continue,  // continue
-    End,       // end
-    Keysof,    // keysof
+    Vl,       // vl
+    Cb,       // cb
+    Res,      // res
+    Loop,     // loop
+    In,       // in
+    If,       // if
+    Else,     // else
+    Continue, // continue
+    End,      // end
+    Keysof,   // keysof
 
     // Literals
     Identifier(String),
@@ -25,35 +25,35 @@ pub enum Token {
     Boolean(bool),
 
     // Operators
-    Equals,      // ==
-    NotEquals,   // !=
-    Assign,      // =
-    Plus,        // +
-    Minus,       // -
-    Star,        // *
-    Slash,       // /
-    Percent,     // %
-    Lt,          // <
-    LtEq,        // <=
-    Gt,          // >
-    GtEq,        // >=
-    And,         // &&
-    Or,          // ||
-    Not,         // !
-    Typeof,      // typeof
-    
+    Equals,    // ==
+    NotEquals, // !=
+    Assign,    // =
+    Plus,      // +
+    Minus,     // -
+    Star,      // *
+    Slash,     // /
+    Percent,   // %
+    Lt,        // <
+    LtEq,      // <=
+    Gt,        // >
+    GtEq,      // >=
+    And,       // &&
+    Or,        // ||
+    Not,       // !
+    Typeof,    // typeof
+
     // Delimiters
-    LeftParen,   // (
-    RightParen,  // )
-    LeftBrace,   // {
-    RightBrace,  // }
-    LeftBracket, // [
-    RightBracket,// ]
-    Semicolon,   // ;
-    Comma,       // ,
-    Dot,         // .
-    Colon,       // :
-    
+    LeftParen,    // (
+    RightParen,   // )
+    LeftBrace,    // {
+    RightBrace,   // }
+    LeftBracket,  // [
+    RightBracket, // ]
+    Semicolon,    // ;
+    Comma,        // ,
+    Dot,          // .
+    Colon,        // :
+
     // Special
     Eof,
 }
@@ -81,7 +81,7 @@ impl Lexer {
 
         loop {
             self.skip_whitespace();
-            
+
             if self.is_at_end() {
                 tokens.push(Token::Eof);
                 break;
@@ -159,7 +159,11 @@ impl Lexer {
                     self.advance();
                     return Ok(Token::And);
                 }
-                return Err(SyntaxError::unexpected_char('&', self.current_line, self.current_column));
+                return Err(SyntaxError::unexpected_char(
+                    '&',
+                    self.current_line,
+                    self.current_column,
+                ));
             }
             '|' => {
                 self.advance();
@@ -167,12 +171,22 @@ impl Lexer {
                     self.advance();
                     return Ok(Token::Or);
                 }
-                return Err(SyntaxError::unexpected_char('|', self.current_line, self.current_column));
+                return Err(SyntaxError::unexpected_char(
+                    '|',
+                    self.current_line,
+                    self.current_column,
+                ));
             }
             '"' => return self.read_string(),
             _ if ch.is_ascii_digit() => return self.read_number(),
             _ if ch.is_alphabetic() || ch == '_' => return self.read_identifier(),
-            _ => return Err(SyntaxError::unexpected_char(ch, self.current_line, self.current_column)),
+            _ => {
+                return Err(SyntaxError::unexpected_char(
+                    ch,
+                    self.current_line,
+                    self.current_column,
+                ))
+            }
         };
 
         self.advance();
@@ -181,12 +195,14 @@ impl Lexer {
 
     fn read_identifier(&mut self) -> SyntaxResult<Token> {
         let start = self.position;
-        while !self.is_at_end() && (self.current_char().is_alphanumeric() || self.current_char() == '_') {
+        while !self.is_at_end()
+            && (self.current_char().is_alphanumeric() || self.current_char() == '_')
+        {
             self.advance();
         }
 
         let text: String = self.input[start..self.position].iter().collect();
-        
+
         let token = match text.as_str() {
             "vl" => Token::Vl,
             "cb" => Token::Cb,
@@ -209,7 +225,7 @@ impl Lexer {
 
     fn read_number(&mut self) -> SyntaxResult<Token> {
         let start = self.position;
-        
+
         while !self.is_at_end() && self.current_char().is_ascii_digit() {
             self.advance();
         }
@@ -222,8 +238,9 @@ impl Lexer {
         }
 
         let text: String = self.input[start..self.position].iter().collect();
-        let number = text.parse::<f64>()
-            .map_err(|_| SyntaxError::invalid_number(text, self.current_line, self.current_column))?;
+        let number = text.parse::<f64>().map_err(|_| {
+            SyntaxError::invalid_number(text, self.current_line, self.current_column)
+        })?;
 
         Ok(Token::Number(number))
     }
@@ -237,7 +254,10 @@ impl Lexer {
         }
 
         if self.is_at_end() {
-            return Err(SyntaxError::unterminated_string(self.current_line, self.current_column));
+            return Err(SyntaxError::unterminated_string(
+                self.current_line,
+                self.current_column,
+            ));
         }
 
         let text: String = self.input[start..self.position].iter().collect();
@@ -291,7 +311,7 @@ mod tests {
     fn test_tokenize_simple() {
         let mut lexer = Lexer::new("vl x = 42;");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 6);
         assert_eq!(tokens[0], Token::Vl);
         assert_eq!(tokens[1], Token::Identifier("x".to_string()));

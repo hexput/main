@@ -1,5 +1,5 @@
+use hexput::language::ast::{AssignTarget, BinaryOp, Expression, Statement};
 use hexput::language::parser;
-use hexput::language::ast::{Statement, Expression, BinaryOp, AssignTarget};
 
 /// Helper to parse hexput source code
 fn parse(source: &str) -> Result<hexput::language::ast::Ast, Box<dyn std::error::Error>> {
@@ -12,7 +12,10 @@ fn test_parse_binary_operators() {
     // Addition
     let ast = parse("vl x = 2 + 3;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Binary { op, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Binary { op, .. },
+            ..
+        } => {
             assert!(matches!(op, BinaryOp::Add));
         }
         _ => panic!("Expected binary addition"),
@@ -21,7 +24,10 @@ fn test_parse_binary_operators() {
     // Subtraction
     let ast = parse("vl x = 5 - 2;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Binary { op, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Binary { op, .. },
+            ..
+        } => {
             assert!(matches!(op, BinaryOp::Sub));
         }
         _ => panic!("Expected binary subtraction"),
@@ -30,7 +36,10 @@ fn test_parse_binary_operators() {
     // Multiplication
     let ast = parse("vl x = 3 * 4;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Binary { op, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Binary { op, .. },
+            ..
+        } => {
             assert!(matches!(op, BinaryOp::Mul));
         }
         _ => panic!("Expected binary multiplication"),
@@ -39,7 +48,10 @@ fn test_parse_binary_operators() {
     // Division
     let ast = parse("vl x = 8 / 2;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Binary { op, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Binary { op, .. },
+            ..
+        } => {
             assert!(matches!(op, BinaryOp::Div));
         }
         _ => panic!("Expected binary division"),
@@ -48,7 +60,10 @@ fn test_parse_binary_operators() {
     // Equality
     let ast = parse("vl x = 5 == 5;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Binary { op, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Binary { op, .. },
+            ..
+        } => {
             assert!(matches!(op, BinaryOp::Eq));
         }
         _ => panic!("Expected equality"),
@@ -57,7 +72,10 @@ fn test_parse_binary_operators() {
     // Not equal
     let ast = parse("vl x = 5 != 3;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Binary { op, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Binary { op, .. },
+            ..
+        } => {
             assert!(matches!(op, BinaryOp::NotEq));
         }
         _ => panic!("Expected not equal"),
@@ -69,19 +87,24 @@ fn test_parse_operator_precedence() {
     // Multiplication before addition: 2 + 3 * 4
     let ast = parse("vl x = 2 + 3 * 4;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { 
-            value: Expression::Binary { 
-                op: BinaryOp::Add, 
-                left, 
-                right 
-            }, 
-            .. 
+        Statement::VarDecl {
+            value:
+                Expression::Binary {
+                    op: BinaryOp::Add,
+                    left,
+                    right,
+                },
+            ..
         } => {
             // Left should be 2
             assert!(matches!(**left, Expression::Number(2.0)));
             // Right should be 3 * 4
             match &**right {
-                Expression::Binary { op: BinaryOp::Mul, left: l2, right: r2 } => {
+                Expression::Binary {
+                    op: BinaryOp::Mul,
+                    left: l2,
+                    right: r2,
+                } => {
                     assert!(matches!(**l2, Expression::Number(3.0)));
                     assert!(matches!(**r2, Expression::Number(4.0)));
                 }
@@ -94,17 +117,20 @@ fn test_parse_operator_precedence() {
     // Division before subtraction: 10 - 8 / 2
     let ast = parse("vl x = 10 - 8 / 2;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { 
-            value: Expression::Binary { 
-                op: BinaryOp::Sub, 
-                left, 
-                right 
-            }, 
-            .. 
+        Statement::VarDecl {
+            value:
+                Expression::Binary {
+                    op: BinaryOp::Sub,
+                    left,
+                    right,
+                },
+            ..
         } => {
             assert!(matches!(**left, Expression::Number(10.0)));
             match &**right {
-                Expression::Binary { op: BinaryOp::Div, .. } => {},
+                Expression::Binary {
+                    op: BinaryOp::Div, ..
+                } => {}
                 _ => panic!("Expected division on right"),
             }
         }
@@ -116,7 +142,10 @@ fn test_parse_operator_precedence() {
 fn test_parse_array_literal() {
     let ast = parse("vl arr = [1, 2, 3];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Array(elements), .. } => {
+        Statement::VarDecl {
+            value: Expression::Array(elements),
+            ..
+        } => {
             assert_eq!(elements.len(), 3);
             assert!(matches!(elements[0], Expression::Number(1.0)));
             assert!(matches!(elements[1], Expression::Number(2.0)));
@@ -128,7 +157,10 @@ fn test_parse_array_literal() {
     // Empty array
     let ast = parse("vl arr = [];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Array(elements), .. } => {
+        Statement::VarDecl {
+            value: Expression::Array(elements),
+            ..
+        } => {
             assert_eq!(elements.len(), 0);
         }
         _ => panic!("Expected empty array"),
@@ -137,7 +169,10 @@ fn test_parse_array_literal() {
     // Nested array
     let ast = parse("vl arr = [[1, 2], [3, 4]];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Array(elements), .. } => {
+        Statement::VarDecl {
+            value: Expression::Array(elements),
+            ..
+        } => {
             assert_eq!(elements.len(), 2);
             assert!(matches!(elements[0], Expression::Array(_)));
             assert!(matches!(elements[1], Expression::Array(_)));
@@ -150,7 +185,10 @@ fn test_parse_array_literal() {
 fn test_parse_object_literal() {
     let ast = parse("vl obj = {a: 1, b: 2};").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Object(props), .. } => {
+        Statement::VarDecl {
+            value: Expression::Object(props),
+            ..
+        } => {
             assert_eq!(props.len(), 2);
             assert!(props.contains_key("a"));
             assert!(props.contains_key("b"));
@@ -163,7 +201,10 @@ fn test_parse_object_literal() {
     // Empty object
     let ast = parse("vl obj = {};").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Object(props), .. } => {
+        Statement::VarDecl {
+            value: Expression::Object(props),
+            ..
+        } => {
             assert_eq!(props.len(), 0);
         }
         _ => panic!("Expected empty object"),
@@ -172,7 +213,10 @@ fn test_parse_object_literal() {
     // Nested object
     let ast = parse("vl obj = {a: {b: 1}};").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Object(props), .. } => {
+        Statement::VarDecl {
+            value: Expression::Object(props),
+            ..
+        } => {
             assert_eq!(props.len(), 1);
             match props.get("a").unwrap() {
                 Expression::Object(nested) => {
@@ -190,7 +234,10 @@ fn test_parse_object_literal() {
 fn test_parse_property_access() {
     let ast = parse("vl x = obj.prop;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Property { object, property }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Property { object, property },
+            ..
+        } => {
             assert!(matches!(**object, Expression::Identifier(_)));
             assert_eq!(property, "prop");
         }
@@ -200,7 +247,10 @@ fn test_parse_property_access() {
     // Chained property access
     let ast = parse("vl x = obj.a.b;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Property { object, property }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Property { object, property },
+            ..
+        } => {
             assert_eq!(property, "b");
             match &**object {
                 Expression::Property { property: p2, .. } => {
@@ -217,7 +267,10 @@ fn test_parse_property_access() {
 fn test_parse_index_access() {
     let ast = parse("vl x = arr[0];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Index { object, index }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Index { object, index },
+            ..
+        } => {
             assert!(matches!(**object, Expression::Identifier(_)));
             assert!(matches!(**index, Expression::Number(0.0)));
         }
@@ -227,7 +280,10 @@ fn test_parse_index_access() {
     // String index
     let ast = parse("vl x = obj[\"key\"];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Index { index, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Index { index, .. },
+            ..
+        } => {
             assert!(matches!(**index, Expression::String(_)));
         }
         _ => panic!("Expected index access with string"),
@@ -236,7 +292,10 @@ fn test_parse_index_access() {
     // Computed index
     let ast = parse("vl x = arr[i + 1];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Index { index, .. }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Index { index, .. },
+            ..
+        } => {
             assert!(matches!(**index, Expression::Binary { .. }));
         }
         _ => panic!("Expected index access with expression"),
@@ -247,7 +306,10 @@ fn test_parse_index_access() {
 fn test_parse_function_call() {
     let ast = parse("vl x = foo();").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Call { callee, args }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Call { callee, args },
+            ..
+        } => {
             assert_eq!(callee, "foo");
             assert_eq!(args.len(), 0);
         }
@@ -257,7 +319,10 @@ fn test_parse_function_call() {
     // With arguments
     let ast = parse("vl x = add(1, 2);").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Call { callee, args }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Call { callee, args },
+            ..
+        } => {
             assert_eq!(callee, "add");
             assert_eq!(args.len(), 2);
             assert!(matches!(args[0], Expression::Number(1.0)));
@@ -269,11 +334,17 @@ fn test_parse_function_call() {
     // Nested calls
     let ast = parse("vl x = outer(inner(5));").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Call { callee, args }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Call { callee, args },
+            ..
+        } => {
             assert_eq!(callee, "outer");
             assert_eq!(args.len(), 1);
             match &args[0] {
-                Expression::Call { callee: inner, args: inner_args } => {
+                Expression::Call {
+                    callee: inner,
+                    args: inner_args,
+                } => {
                     assert_eq!(inner, "inner");
                     assert_eq!(inner_args.len(), 1);
                 }
@@ -288,7 +359,10 @@ fn test_parse_function_call() {
 fn test_parse_keysof() {
     let ast = parse("vl keys = keysof obj;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::KeysOf(expr), .. } => {
+        Statement::VarDecl {
+            value: Expression::KeysOf(expr),
+            ..
+        } => {
             assert!(matches!(**expr, Expression::Identifier(_)));
         }
         _ => panic!("Expected keysof expression"),
@@ -297,7 +371,10 @@ fn test_parse_keysof() {
     // With object literal
     let ast = parse("vl keys = keysof {a: 1, b: 2};").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::KeysOf(expr), .. } => {
+        Statement::VarDecl {
+            value: Expression::KeysOf(expr),
+            ..
+        } => {
             assert!(matches!(**expr, Expression::Object(_)));
         }
         _ => panic!("Expected keysof with object literal"),
@@ -322,30 +399,26 @@ fn test_parse_assignment() {
     // Property assignment
     let ast = parse("obj.prop = 5;").unwrap();
     match &ast.statements[0] {
-        Statement::Assignment { target, .. } => {
-            match target {
-                AssignTarget::Property { object, property } => {
-                    assert!(object.is_identifier());
-                    assert_eq!(property, "prop");
-                }
-                _ => panic!("Expected property target"),
+        Statement::Assignment { target, .. } => match target {
+            AssignTarget::Property { object, property } => {
+                assert!(object.is_identifier());
+                assert_eq!(property, "prop");
             }
-        }
+            _ => panic!("Expected property target"),
+        },
         _ => panic!("Expected property assignment"),
     }
 
     // Index assignment
     let ast = parse("arr[0] = 100;").unwrap();
     match &ast.statements[0] {
-        Statement::Assignment { target, .. } => {
-            match target {
-                AssignTarget::Index { object, index } => {
-                    assert!(object.is_identifier());
-                    assert!(matches!(**index, Expression::Number(0.0)));
-                }
-                _ => panic!("Expected index target"),
+        Statement::Assignment { target, .. } => match target {
+            AssignTarget::Index { object, index } => {
+                assert!(object.is_identifier());
+                assert!(matches!(**index, Expression::Number(0.0)));
             }
-        }
+            _ => panic!("Expected index target"),
+        },
         _ => panic!("Expected index assignment"),
     }
 }
@@ -354,7 +427,12 @@ fn test_parse_assignment() {
 fn test_parse_loop() {
     let ast = parse("loop item in items { vl x = item; }").unwrap();
     match &ast.statements[0] {
-        Statement::Loop { var, iterable, body, .. } => {
+        Statement::Loop {
+            var,
+            iterable,
+            body,
+            ..
+        } => {
             assert_eq!(var, "item");
             assert!(matches!(iterable, Expression::Identifier(_)));
             assert_eq!(body.len(), 1);
@@ -378,7 +456,12 @@ fn test_parse_if_statement() {
     // Simple if with equality
     let ast = parse("if x == 5 { vl y = 10; }").unwrap();
     match &ast.statements[0] {
-        Statement::If { condition, then_body, else_body, .. } => {
+        Statement::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => {
             assert!(matches!(condition, Expression::Binary { .. }));
             assert_eq!(then_body.len(), 1);
             assert!(else_body.is_none());
@@ -389,7 +472,11 @@ fn test_parse_if_statement() {
     // If with boolean condition
     let ast = parse("if true { res 1; }").unwrap();
     match &ast.statements[0] {
-        Statement::If { condition, then_body, .. } => {
+        Statement::If {
+            condition,
+            then_body,
+            ..
+        } => {
             assert!(matches!(condition, Expression::Boolean(true)));
             assert_eq!(then_body.len(), 1);
         }
@@ -431,7 +518,9 @@ fn test_parse_callback_declaration() {
     // No parameters
     let ast = parse("cb foo() { res 1; }").unwrap();
     match &ast.statements[0] {
-        Statement::CallbackDecl { name, params, body, .. } => {
+        Statement::CallbackDecl {
+            name, params, body, ..
+        } => {
             assert_eq!(name, "foo");
             assert_eq!(params.len(), 0);
             assert_eq!(body.len(), 1);
@@ -442,7 +531,9 @@ fn test_parse_callback_declaration() {
     // Multiple parameters
     let ast = parse("cb add(a, b, c) { res a + b + c; }").unwrap();
     match &ast.statements[0] {
-        Statement::CallbackDecl { name, params, body, .. } => {
+        Statement::CallbackDecl {
+            name, params, body, ..
+        } => {
             assert_eq!(name, "add");
             assert_eq!(params.len(), 3);
             assert_eq!(params[0], "a");
@@ -480,10 +571,13 @@ fn test_parse_complex_nested_structure() {
     let source = "vl config = {name: \"app\", version: 1.0, settings: {enabled: true, count: 5}}; vl items = [1, 2, 3, 4, 5]; loop item in items { if item == 3 { res item; } }";
     let ast = parse(source).unwrap();
     assert_eq!(ast.statements.len(), 3);
-    
+
     // First statement is object with nested object
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Object(props), .. } => {
+        Statement::VarDecl {
+            value: Expression::Object(props),
+            ..
+        } => {
             assert_eq!(props.len(), 3);
             match props.get("settings").unwrap() {
                 Expression::Object(nested) => {
@@ -494,15 +588,18 @@ fn test_parse_complex_nested_structure() {
         }
         _ => panic!("Expected object declaration"),
     }
-    
+
     // Second statement is array
     match &ast.statements[1] {
-        Statement::VarDecl { value: Expression::Array(elements), .. } => {
+        Statement::VarDecl {
+            value: Expression::Array(elements),
+            ..
+        } => {
             assert_eq!(elements.len(), 5);
         }
         _ => panic!("Expected array declaration"),
     }
-    
+
     // Third statement is loop with if
     match &ast.statements[2] {
         Statement::Loop { body, .. } => {
@@ -517,7 +614,10 @@ fn test_parse_complex_nested_structure() {
 fn test_parse_string_literals() {
     let ast = parse(r#"vl msg = "hello world";"#).unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::String(s), .. } => {
+        Statement::VarDecl {
+            value: Expression::String(s),
+            ..
+        } => {
             assert_eq!(s, "hello world");
         }
         _ => panic!("Expected string literal"),
@@ -526,7 +626,10 @@ fn test_parse_string_literals() {
     // Empty string
     let ast = parse(r#"vl empty = "";"#).unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::String(s), .. } => {
+        Statement::VarDecl {
+            value: Expression::String(s),
+            ..
+        } => {
             assert_eq!(s, "");
         }
         _ => panic!("Expected empty string"),
@@ -537,16 +640,22 @@ fn test_parse_string_literals() {
 fn test_parse_boolean_literals() {
     let ast = parse("vl t = true;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Boolean(b), .. } => {
-            assert_eq!(*b, true);
+        Statement::VarDecl {
+            value: Expression::Boolean(b),
+            ..
+        } => {
+            assert!(*b);
         }
         _ => panic!("Expected boolean true"),
     }
 
     let ast = parse("vl f = false;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Boolean(b), .. } => {
-            assert_eq!(*b, false);
+        Statement::VarDecl {
+            value: Expression::Boolean(b),
+            ..
+        } => {
+            assert!(!(*b));
         }
         _ => panic!("Expected boolean false"),
     }
@@ -557,7 +666,10 @@ fn test_parse_number_literals() {
     // Integer
     let ast = parse("vl x = 42;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Number(n), .. } => {
+        Statement::VarDecl {
+            value: Expression::Number(n),
+            ..
+        } => {
             assert_eq!(*n, 42.0);
         }
         _ => panic!("Expected integer"),
@@ -566,7 +678,10 @@ fn test_parse_number_literals() {
     // Float
     let ast = parse("vl x = 3.14;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Number(n), .. } => {
+        Statement::VarDecl {
+            value: Expression::Number(n),
+            ..
+        } => {
             assert_eq!(*n, 3.14);
         }
         _ => panic!("Expected float"),
@@ -575,7 +690,10 @@ fn test_parse_number_literals() {
     // Zero
     let ast = parse("vl x = 0;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Number(n), .. } => {
+        Statement::VarDecl {
+            value: Expression::Number(n),
+            ..
+        } => {
             assert_eq!(*n, 0.0);
         }
         _ => panic!("Expected zero"),
@@ -586,7 +704,10 @@ fn test_parse_number_literals() {
 fn test_parse_identifier() {
     let ast = parse("vl y = x;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Identifier(name), .. } => {
+        Statement::VarDecl {
+            value: Expression::Identifier(name),
+            ..
+        } => {
             assert_eq!(name, "x");
         }
         _ => panic!("Expected identifier"),
@@ -595,7 +716,8 @@ fn test_parse_identifier() {
 
 #[test]
 fn test_parse_comments() {
-    let source = "// This is a comment\nvl x = 5; // Inline comment\n// Another comment\nvl y = 10;";
+    let source =
+        "// This is a comment\nvl x = 5; // Inline comment\n// Another comment\nvl y = 10;";
     let ast = parse(source).unwrap();
     assert_eq!(ast.statements.len(), 2);
 }
@@ -605,7 +727,10 @@ fn test_parse_chained_operations() {
     // Method chaining style
     let ast = parse("vl x = obj.prop.subprop;").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Property { object, property }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Property { object, property },
+            ..
+        } => {
             assert_eq!(property, "subprop");
             match &**object {
                 Expression::Property { property: p2, .. } => {
@@ -620,7 +745,10 @@ fn test_parse_chained_operations() {
     // Array access chain
     let ast = parse("vl x = arr[0][1];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Index { object, index }, .. } => {
+        Statement::VarDecl {
+            value: Expression::Index { object, index },
+            ..
+        } => {
             assert!(matches!(**index, Expression::Number(1.0)));
             match &**object {
                 Expression::Index { index: idx2, .. } => {
@@ -650,7 +778,7 @@ fn test_parse_whitespace_insensitivity() {
     let compact = parse("vl x=5;vl y=10;").unwrap();
     let spaced = parse("vl x = 5; vl y = 10;").unwrap();
     let multiline = parse("vl x = 5;\nvl y = 10;").unwrap();
-    
+
     assert_eq!(compact.statements.len(), 2);
     assert_eq!(spaced.statements.len(), 2);
     assert_eq!(multiline.statements.len(), 2);
@@ -669,7 +797,10 @@ fn test_parse_edge_cases() {
     // Empty object
     let ast = parse("vl obj = {};").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Object(props), .. } => {
+        Statement::VarDecl {
+            value: Expression::Object(props),
+            ..
+        } => {
             assert_eq!(props.len(), 0);
         }
         _ => panic!("Expected empty object"),
@@ -678,7 +809,10 @@ fn test_parse_edge_cases() {
     // Empty array
     let ast = parse("vl arr = [];").unwrap();
     match &ast.statements[0] {
-        Statement::VarDecl { value: Expression::Array(elements), .. } => {
+        Statement::VarDecl {
+            value: Expression::Array(elements),
+            ..
+        } => {
             assert_eq!(elements.len(), 0);
         }
         _ => panic!("Expected empty array"),

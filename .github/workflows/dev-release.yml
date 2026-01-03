@@ -132,6 +132,10 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
       
+      - name: Build Windows service binary
+        if: matrix.os == 'windows-latest'
+        run: cargo build --release --target ${{ matrix.target }} --bin hexput-service --features windows-service
+      
       - name: Strip binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
         run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
@@ -148,7 +152,9 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           7z a ${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          7z a hexput-service-windows-x86_64.zip hexput-service.exe
           move ${{ matrix.asset_name }}.zip ../../../
+          move hexput-service-windows-x86_64.zip ../../../
         shell: cmd
       
       - name: Upload Release Asset (Linux/macOS)
@@ -171,6 +177,17 @@ jobs:
           upload_url: ${{ needs.create-release.outputs.upload_url }}
           asset_path: ./${{ matrix.asset_name }}.zip
           asset_name: ${{ matrix.asset_name }}.zip
+          asset_content_type: application/zip
+      
+      - name: Upload Windows Service Asset
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./hexput-service-windows-x86_64.zip
+          asset_name: hexput-service-windows-x86_64.zip
           asset_content_type: application/zip
 
   publish-library:

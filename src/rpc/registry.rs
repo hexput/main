@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// A function that can be called remotely
-pub type RemoteFunction = Arc<dyn Fn(Vec<serde_json::Value>) -> Result<serde_json::Value, String> + Send + Sync>;
+pub type RemoteFunction =
+    Arc<dyn Fn(Vec<serde_json::Value>) -> Result<serde_json::Value, String> + Send + Sync>;
 
 type MethodKey = (String, String);
 
@@ -32,7 +33,11 @@ impl FunctionRegistry {
         self.functions.get(name)
     }
 
-    pub fn call(&self, name: &str, args: Vec<serde_json::Value>) -> Result<serde_json::Value, String> {
+    pub fn call(
+        &self,
+        name: &str,
+        args: Vec<serde_json::Value>,
+    ) -> Result<serde_json::Value, String> {
         match self.get(name) {
             Some(func) => func(args),
             None => Err(format!("Function '{}' not found", name)),
@@ -85,8 +90,12 @@ impl Registry {
         context_id.filter(|s| !s.is_empty())
     }
 
-    pub fn register_function<F>(&mut self, context_id: Option<&str>, name: impl Into<String>, func: F)
-    where
+    pub fn register_function<F>(
+        &mut self,
+        context_id: Option<&str>,
+        name: impl Into<String>,
+        func: F,
+    ) where
         F: Fn(Vec<serde_json::Value>) -> Result<serde_json::Value, String> + Send + Sync + 'static,
     {
         match self.normalize_context_id(context_id) {
@@ -94,7 +103,7 @@ impl Registry {
             Some(ctx) => self
                 .functions_by_context
                 .entry(ctx.to_string())
-                .or_insert_with(FunctionRegistry::new)
+                .or_default()
                 .register(name, func),
         }
     }
@@ -108,11 +117,14 @@ impl Registry {
     ) where
         F: Fn(Vec<serde_json::Value>) -> Result<serde_json::Value, String> + Send + Sync + 'static,
     {
-        let ctx = self.normalize_context_id(context_id).unwrap_or("default").to_string();
+        let ctx = self
+            .normalize_context_id(context_id)
+            .unwrap_or("default")
+            .to_string();
         let key: MethodKey = (object_id.into(), method_name.into());
         self.methods_by_context
             .entry(ctx)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(key, Arc::new(func));
     }
 
@@ -126,12 +138,15 @@ impl Registry {
         let ctx = self.normalize_context_id(context_id).unwrap_or("default");
         if let Some(allowed) = self.allowed_functions.get(ctx) {
             if !allowed.contains(&name.to_string()) {
-                return Err(format!("Function '{}' not registered in context '{}'", name, ctx));
+                return Err(format!(
+                    "Function '{}' not registered in context '{}'",
+                    name, ctx
+                ));
             }
         } else {
             return Err(format!("No functions registered in context '{}'", ctx));
         }
-        
+
         match self.normalize_context_id(context_id) {
             None => self.default_functions.call(name, args),
             Some(ctx) => self
@@ -150,43 +165,54 @@ impl Registry {
         args: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value, String> {
         let ctx = self.normalize_context_id(context_id).unwrap_or("default");
-        
+
         // Check if method is allowed
         if let Some(allowed) = self.allowed_methods.get(ctx) {
             let key = (object_id.to_string(), method_name.to_string());
             if !allowed.contains(&key) {
-                return Err(format!("Method '{}.{}' not registered in context '{}'", object_id, method_name, ctx));
+                return Err(format!(
+                    "Method '{}.{}' not registered in context '{}'",
+                    object_id, method_name, ctx
+                ));
             }
         } else {
             return Err(format!("No methods registered in context '{}'", ctx));
         }
-        
+
         match self.methods_by_context.get(ctx) {
             Some(methods) => match methods.get(&(object_id.to_string(), method_name.to_string())) {
                 Some(func) => func(args),
-                None => Err(format!("Method '{}.{}' not found in context '{}'", object_id, method_name, ctx)),
+                None => Err(format!(
+                    "Method '{}.{}' not found in context '{}'",
+                    object_id, method_name, ctx
+                )),
             },
             None => Err(format!("No methods registered for context '{}'", ctx)),
         }
     }
-    
+
     /// Mark a function as allowed to be called in a context
     pub fn allow_function(&mut self, context_id: &str, function_name: impl Into<String>) {
         self.allowed_functions
             .entry(context_id.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(function_name.into());
     }
-    
+
     /// Mark a method as allowed to be called in a context
-    pub fn allow_method(&mut self, context_id: &str, object_id: impl Into<String>, method_name: impl Into<String>) {
+    pub fn allow_method(
+        &mut self,
+        context_id: &str,
+        object_id: impl Into<String>,
+        method_name: impl Into<String>,
+    ) {
         let key = (object_id.into(), method_name.into());
         self.allowed_methods
             .entry(context_id.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(key);
     }
-    
+
     /// Check if a function is allowed in a context
     pub fn is_function_allowed(&self, context_id: &str, function_name: &str) -> bool {
         self.allowed_functions
@@ -194,7 +220,7 @@ impl Registry {
             .map(|list| list.contains(&function_name.to_string()))
             .unwrap_or(false)
     }
-    
+
     /// Check if a method is allowed in a context
     pub fn is_method_allowed(&self, context_id: &str, object_id: &str, method_name: &str) -> bool {
         self.allowed_methods
@@ -202,7 +228,7 @@ impl Registry {
             .map(|list| list.contains(&(object_id.to_string(), method_name.to_string())))
             .unwrap_or(false)
     }
-    
+
     /// Get all allowed function names for a context
     pub fn get_allowed_functions(&self, context_id: &str) -> Vec<String> {
         self.allowed_functions

@@ -44,7 +44,7 @@ impl SymbolTable {
             kind,
             is_local: true,
         };
-        
+
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, symbol);
         }

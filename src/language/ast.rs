@@ -14,11 +14,21 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
-        Self { start, end, line, column }
+        Self {
+            start,
+            end,
+            line,
+            column,
+        }
     }
 
     pub fn unknown() -> Self {
-        Self { start: 0, end: 0, line: 0, column: 0 }
+        Self {
+            start: 0,
+            end: 0,
+            line: 0,
+            column: 0,
+        }
     }
 }
 
@@ -37,7 +47,7 @@ pub enum Statement {
         value: Expression,
         span: Option<Span>,
     },
-    
+
     /// Callback definition: cb name(params) { body }
     CallbackDecl {
         name: String,
@@ -45,14 +55,14 @@ pub enum Statement {
         body: Vec<Statement>,
         span: Option<Span>,
     },
-    
+
     /// Assignment: x = expr;
     Assignment {
         target: AssignTarget,
         value: Expression,
         span: Option<Span>,
     },
-    
+
     /// Loop: loop x in expr { body }
     Loop {
         var: String,
@@ -60,7 +70,7 @@ pub enum Statement {
         body: Vec<Statement>,
         span: Option<Span>,
     },
-    
+
     /// Conditional: if expr { body } [else { body }]
     If {
         condition: Expression,
@@ -68,26 +78,22 @@ pub enum Statement {
         else_body: Option<Vec<Statement>>,
         span: Option<Span>,
     },
-    
+
     /// Return: res expr;
     Return {
         value: Expression,
         span: Option<Span>,
     },
-    
+
     /// Continue: continue;
-    Continue {
-        span: Option<Span>,
-    },
-    
+    Continue { span: Option<Span> },
+
     /// End: end;
-    End {
-        span: Option<Span>,
-    },
-    
+    End { span: Option<Span> },
+
     /// Expression statement
     Expression(Expression),
-    
+
     /// Block: { statements }
     Block {
         statements: Vec<Statement>,
@@ -100,13 +106,13 @@ pub enum Statement {
 pub enum AssignTarget {
     /// Simple variable: x
     Identifier(String),
-    
+
     /// Array index: arr[index]
     Index {
         object: Box<Expression>,
         index: Box<Expression>,
     },
-    
+
     /// Property access: obj.prop
     Property {
         object: Box<Expression>,
@@ -119,69 +125,69 @@ pub enum AssignTarget {
 pub enum Expression {
     /// Number literal
     Number(f64),
-    
+
     /// String literal
     String(String),
-    
+
     /// Boolean literal
     Boolean(bool),
-    
+
     /// Undefined value
     Undefined,
-    
+
     /// Identifier (variable reference)
     Identifier(String),
-    
+
     /// Object literal: { key: value, ... }
     Object(HashMap<String, Expression>),
-    
+
     /// Array literal: [expr, ...]
     Array(Vec<Expression>),
-    
+
     /// Function call: name(args)
     Call {
         callee: String,
         args: Vec<Expression>,
     },
-    
+
     /// Binary operation: left op right
     Binary {
         op: BinaryOp,
         left: Box<Expression>,
         right: Box<Expression>,
     },
-    
+
     /// Unary operation: op expr
     Unary {
         op: UnaryOp,
         operand: Box<Expression>,
     },
-    
+
     /// Logical operation: left op right
     Logical {
         op: LogicalOp,
         left: Box<Expression>,
         right: Box<Expression>,
     },
-    
+
     /// Property access: object.property
     Property {
         object: Box<Expression>,
         property: String,
     },
-    
+
     /// Index access: object[index]
     Index {
         object: Box<Expression>,
         index: Box<Expression>,
     },
-    
+
     /// Keys of object: keysof expr
     KeysOf(Box<Expression>),
-    
+
     /// Typeof expression: typeof expr
     TypeOf(Box<Expression>),
-    
+
     /// Grouped expression: (expr)
     Grouped(Box<Expression>),
 }
@@ -190,34 +196,34 @@ pub enum Expression {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinaryOp {
     // Arithmetic
-    Add,      // +
-    Sub,      // -
-    Mul,      // *
-    Div,      // /
-    Mod,      // %
-    
+    Add, // +
+    Sub, // -
+    Mul, // *
+    Div, // /
+    Mod, // %
+
     // Comparison
-    Eq,       // ==
-    NotEq,    // !=
-    Lt,       // <
-    LtEq,     // <=
-    Gt,       // >
-    GtEq,     // >=
+    Eq,    // ==
+    NotEq, // !=
+    Lt,    // <
+    LtEq,  // <=
+    Gt,    // >
+    GtEq,  // >=
 }
 
 /// Unary operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnaryOp {
-    Neg,      // - (negation)
-    Not,      // ! (logical not)
-    Plus,     // + (unary plus)
+    Neg,  // - (negation)
+    Not,  // ! (logical not)
+    Plus, // + (unary plus)
 }
 
 /// Logical operators (short-circuiting)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogicalOp {
-    And,      // &&
-    Or,       // ||
+    And, // &&
+    Or,  // ||
 }
 
 impl std::fmt::Display for BinaryOp {

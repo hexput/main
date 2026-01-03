@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub fn parse(source: &str) -> SyntaxResult<Ast> {
     let mut lexer = Lexer::new(source);
     let tokens = lexer.tokenize()?;
-    
+
     let mut parser = Parser::new(tokens);
     parser.parse()
 }
@@ -66,21 +66,25 @@ impl Parser {
 
     fn var_decl(&mut self) -> SyntaxResult<Statement> {
         self.consume(Token::Vl)?;
-        
+
         let name = self.consume_identifier()?;
         self.consume(Token::Assign)?;
         let value = self.expression()?;
         self.consume_semicolon()?;
 
-        Ok(Statement::VarDecl { name, value, span: None })
+        Ok(Statement::VarDecl {
+            name,
+            value,
+            span: None,
+        })
     }
 
     fn callback_decl(&mut self) -> SyntaxResult<Statement> {
         self.consume(Token::Cb)?;
-        
+
         let name = self.consume_identifier()?;
         self.consume(Token::LeftParen)?;
-        
+
         let mut params = Vec::new();
         if !matches!(self.peek(), Token::RightParen) {
             loop {
@@ -91,39 +95,50 @@ impl Parser {
                 self.advance();
             }
         }
-        
+
         self.consume(Token::RightParen)?;
         self.consume(Token::LeftBrace)?;
-        
+
         let mut body = Vec::new();
         while !matches!(self.peek(), Token::RightBrace) {
             body.push(self.statement()?);
         }
-        
+
         self.consume(Token::RightBrace)?;
 
-        Ok(Statement::CallbackDecl { name, params, body, span: None })
+        Ok(Statement::CallbackDecl {
+            name,
+            params,
+            body,
+            span: None,
+        })
     }
 
     fn assignment_or_expr(&mut self) -> SyntaxResult<Statement> {
         // Parse the left side
         let expr = self.expression()?;
-        
+
         // Check if this is an assignment
         if matches!(self.peek(), Token::Assign) {
             self.advance();
             let value = self.expression()?;
             self.consume_semicolon()?;
-            
+
             // Convert expression to assignment target
             let target = match expr {
                 Expression::Identifier(name) => AssignTarget::Identifier(name),
                 Expression::Index { object, index } => AssignTarget::Index { object, index },
-                Expression::Property { object, property } => AssignTarget::Property { object, property },
+                Expression::Property { object, property } => {
+                    AssignTarget::Property { object, property }
+                }
                 _ => return Err(SyntaxError::parse_error("Invalid assignment target")),
             };
-            
-            Ok(Statement::Assignment { target, value, span: None })
+
+            Ok(Statement::Assignment {
+                target,
+                value,
+                span: None,
+            })
         } else {
             self.consume_semicolon()?;
             Ok(Statement::Expression(expr))
@@ -132,51 +147,61 @@ impl Parser {
 
     fn loop_stmt(&mut self) -> SyntaxResult<Statement> {
         self.consume(Token::Loop)?;
-        
+
         let var = self.consume_identifier()?;
         self.consume(Token::In)?;
         let iterable = self.expression()?;
         self.consume(Token::LeftBrace)?;
-        
+
         let mut body = Vec::new();
         while !matches!(self.peek(), Token::RightBrace) {
             body.push(self.statement()?);
         }
-        
+
         self.consume(Token::RightBrace)?;
 
-        Ok(Statement::Loop { var, iterable, body, span: None })
+        Ok(Statement::Loop {
+            var,
+            iterable,
+            body,
+            span: None,
+        })
     }
 
     fn if_stmt(&mut self) -> SyntaxResult<Statement> {
         self.consume(Token::If)?;
-        
+
         let condition = self.expression()?;
         self.consume(Token::LeftBrace)?;
-        
+
         let mut then_body = Vec::new();
         while !matches!(self.peek(), Token::RightBrace) {
             then_body.push(self.statement()?);
         }
-        
+
         self.consume(Token::RightBrace)?;
-        
+
         let else_body = if matches!(self.peek(), Token::Else) {
             self.advance(); // consume 'else'
             self.consume(Token::LeftBrace)?;
-            
+
             let mut else_stmts = Vec::new();
             while !matches!(self.peek(), Token::RightBrace) {
                 else_stmts.push(self.statement()?);
             }
-            
+
             self.consume(Token::RightBrace)?;
             Some(else_stmts)
         } else {
             None
         };
 
-        Ok(Statement::If { condition, then_body, else_body, span: None })
+        Ok(Statement::If {
+            condition,
+            then_body,
+            else_body,
+            span: None,
+        })
     }
 
     fn return_stmt(&mut self) -> SyntaxResult<Statement> {
@@ -246,7 +271,10 @@ impl Parser {
     fn comparison(&mut self) -> SyntaxResult<Expression> {
         let mut left = self.additive()?;
 
-        while matches!(self.peek(), Token::Lt | Token::LtEq | Token::Gt | Token::GtEq) {
+        while matches!(
+            self.peek(),
+            Token::Lt | Token::LtEq | Token::Gt | Token::GtEq
+        ) {
             let op = match self.advance() {
                 Token::Lt => BinaryOp::Lt,
                 Token::LtEq => BinaryOp::LtEq,
@@ -333,7 +361,7 @@ impl Parser {
                     // Function call
                     self.advance();
                     let mut args = Vec::new();
-                    
+
                     if !matches!(self.peek(), Token::RightParen) {
                         loop {
                             args.push(self.expression()?);
@@ -343,15 +371,15 @@ impl Parser {
                             self.advance();
                         }
                     }
-                    
+
                     self.consume(Token::RightParen)?;
-                    
+
                     // Extract callee name
                     let callee = match expr {
                         Expression::Identifier(name) => name,
                         _ => return Err(SyntaxError::parse_error("Invalid function call")),
                     };
-                    
+
                     expr = Expression::Call { callee, args };
                 }
                 Token::Dot => {
@@ -420,46 +448,49 @@ impl Parser {
                 let expr = self.expression()?;
                 Ok(Expression::KeysOf(Box::new(expr)))
             }
-            _ => Err(SyntaxError::parse_error(format!("Unexpected token: {:?}", self.peek()))),
+            _ => Err(SyntaxError::parse_error(format!(
+                "Unexpected token: {:?}",
+                self.peek()
+            ))),
         }
     }
 
     fn object_literal(&mut self) -> SyntaxResult<Expression> {
         self.consume(Token::LeftBrace)?;
-        
+
         let mut properties = HashMap::new();
-        
+
         while !matches!(self.peek(), Token::RightBrace) {
             let key = self.consume_identifier()?;
             self.consume(Token::Colon)?;
             let value = self.expression()?;
-            
+
             properties.insert(key, value);
-            
+
             if !matches!(self.peek(), Token::Comma) {
                 break;
             }
             self.advance();
         }
-        
+
         self.consume(Token::RightBrace)?;
         Ok(Expression::Object(properties))
     }
 
     fn array_literal(&mut self) -> SyntaxResult<Expression> {
         self.consume(Token::LeftBracket)?;
-        
+
         let mut elements = Vec::new();
-        
+
         while !matches!(self.peek(), Token::RightBracket) {
             elements.push(self.expression()?);
-            
+
             if !matches!(self.peek(), Token::Comma) {
                 break;
             }
             self.advance();
         }
-        
+
         self.consume(Token::RightBracket)?;
         Ok(Expression::Array(elements))
     }
@@ -495,7 +526,11 @@ impl Parser {
                 self.advance();
                 Ok(name)
             }
-            _ => Err(SyntaxError::unexpected_token("identifier", format!("{:?}", self.peek()), 0)),
+            _ => Err(SyntaxError::unexpected_token(
+                "identifier",
+                format!("{:?}", self.peek()),
+                0,
+            )),
         }
     }
 
@@ -520,7 +555,7 @@ mod tests {
     fn test_parse_var_decl() {
         let ast = parse("vl x = 42;").unwrap();
         assert_eq!(ast.statements.len(), 1);
-        
+
         match &ast.statements[0] {
             Statement::VarDecl { name, value, .. } => {
                 assert_eq!(name, "x");
@@ -534,9 +569,11 @@ mod tests {
     fn test_parse_callback() {
         let ast = parse("cb add(a, b) { res a + b; }").unwrap();
         assert_eq!(ast.statements.len(), 1);
-        
+
         match &ast.statements[0] {
-            Statement::CallbackDecl { name, params, body, .. } => {
+            Statement::CallbackDecl {
+                name, params, body, ..
+            } => {
                 assert_eq!(name, "add");
                 assert_eq!(params.len(), 2);
                 assert_eq!(body.len(), 1);

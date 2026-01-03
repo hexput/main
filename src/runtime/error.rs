@@ -29,7 +29,7 @@ pub enum RuntimeError {
 
     #[error("Remote call failed: {0}")]
     RemoteCallFailed(String),
-    
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 

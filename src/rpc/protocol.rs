@@ -185,13 +185,18 @@ pub struct Response {
 pub enum ResponseResult {
     #[serde(rename = "success")]
     Success { value: serde_json::Value },
-    
+
     #[serde(rename = "error")]
     Error { message: String },
 }
 
 impl Request {
-    pub fn new(request_id: String, id: String, function: String, args: Vec<serde_json::Value>) -> Self {
+    pub fn new(
+        request_id: String,
+        id: String,
+        function: String,
+        args: Vec<serde_json::Value>,
+    ) -> Self {
         Self {
             request_id,
             id,
@@ -202,7 +207,13 @@ impl Request {
         }
     }
 
-    pub fn in_context(request_id: String, id: String, context_id: String, function: String, args: Vec<serde_json::Value>) -> Self {
+    pub fn in_context(
+        request_id: String,
+        id: String,
+        context_id: String,
+        function: String,
+        args: Vec<serde_json::Value>,
+    ) -> Self {
         Self {
             request_id,
             id,

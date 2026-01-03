@@ -4,13 +4,13 @@
 pub struct Limits {
     /// Maximum number of instructions to execute
     pub max_instructions: usize,
-    
+
     /// Maximum recursion depth
     pub max_recursion_depth: usize,
-    
+
     /// Maximum execution time in milliseconds
     pub max_execution_time_ms: u64,
-    
+
     /// Maximum memory allocation (future)
     pub max_memory_bytes: usize,
 }

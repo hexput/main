@@ -6,12 +6,11 @@
 
 use super::error::TransportError;
 use crate::rpc::protocol::Message;
-use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 use futures::{SinkExt, StreamExt};
+use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
-pub type WebSocketStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>
->;
+pub type WebSocketStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// WebSocket transport for RPC messages
 pub struct WebSocketTransport {
@@ -45,7 +44,9 @@ impl WebSocketTransport {
             Some(Ok(WsMessage::Close(_))) => Err(TransportError::ConnectionClosed),
             Some(Err(e)) => Err(TransportError::WebSocket(e.to_string())),
             None => Err(TransportError::ConnectionClosed),
-            _ => Err(TransportError::General("Unexpected message type".to_string())),
+            _ => Err(TransportError::General(
+                "Unexpected message type".to_string(),
+            )),
         }
     }
 

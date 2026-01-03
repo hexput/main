@@ -15,34 +15,34 @@ fn test_comparison_operators() {
     // Greater than
     let result = execute_script("vl x = 5 > 3; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = 3 > 5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // Less than
     let result = execute_script("vl x = 3 < 5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = 5 < 3; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // Greater than or equal
     let result = execute_script("vl x = 5 >= 5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = 5 >= 3; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = 3 >= 5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // Less than or equal
     let result = execute_script("vl x = 3 <= 5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = 5 <= 5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = 5 <= 3; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
 }
@@ -51,10 +51,10 @@ fn test_comparison_operators() {
 fn test_modulo_operator() {
     let result = execute_script("vl x = 10 % 3; res x;").unwrap();
     assert_eq!(result, Value::Number(1.0));
-    
+
     let result = execute_script("vl x = 7 % 2; res x;").unwrap();
     assert_eq!(result, Value::Number(1.0));
-    
+
     let result = execute_script("vl x = 8 % 4; res x;").unwrap();
     assert_eq!(result, Value::Number(0.0));
 }
@@ -64,23 +64,23 @@ fn test_unary_operators() {
     // Negation
     let result = execute_script("vl x = -5; res x;").unwrap();
     assert_eq!(result, Value::Number(-5.0));
-    
+
     let result = execute_script("vl x = -(-3); res x;").unwrap();
     assert_eq!(result, Value::Number(3.0));
-    
+
     // Logical NOT
     let result = execute_script("vl x = !true; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     let result = execute_script("vl x = !false; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = !0; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     let result = execute_script("vl x = !5; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // Unary plus
     let result = execute_script("vl x = +5; res x;").unwrap();
     assert_eq!(result, Value::Number(5.0));
@@ -91,23 +91,23 @@ fn test_logical_operators_and() {
     // AND operator - both true
     let result = execute_script("vl x = true && true; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     // AND operator - first false (short-circuit)
     let result = execute_script("vl x = false && true; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // AND operator - second false
     let result = execute_script("vl x = true && false; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // AND operator - both false
     let result = execute_script("vl x = false && false; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // AND with numbers (truthy/falsy)
     let result = execute_script("vl x = 5 && 3; res x;").unwrap();
     assert_eq!(result, Value::Number(3.0));
-    
+
     let result = execute_script("vl x = 0 && 5; res x;").unwrap();
     assert_eq!(result, Value::Number(0.0));
 }
@@ -117,23 +117,23 @@ fn test_logical_operators_or() {
     // OR operator - both true
     let result = execute_script("vl x = true || true; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     // OR operator - first true (short-circuit)
     let result = execute_script("vl x = true || false; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     // OR operator - second true
     let result = execute_script("vl x = false || true; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     // OR operator - both false
     let result = execute_script("vl x = false || false; res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // OR with numbers (truthy/falsy)
     let result = execute_script("vl x = 0 || 5; res x;").unwrap();
     assert_eq!(result, Value::Number(5.0));
-    
+
     let result = execute_script("vl x = 3 || 5; res x;").unwrap();
     assert_eq!(result, Value::Number(3.0));
 }
@@ -142,16 +142,16 @@ fn test_logical_operators_or() {
 fn test_typeof_operator() {
     let result = execute_script("vl x = typeof 42; res x;").unwrap();
     assert_eq!(result, Value::String("number".to_string()));
-    
+
     let result = execute_script("vl x = typeof \"hello\"; res x;").unwrap();
     assert_eq!(result, Value::String("string".to_string()));
-    
+
     let result = execute_script("vl x = typeof true; res x;").unwrap();
     assert_eq!(result, Value::String("boolean".to_string()));
-    
+
     let result = execute_script("vl x = typeof [1, 2, 3]; res x;").unwrap();
     assert_eq!(result, Value::String("array".to_string()));
-    
+
     let result = execute_script("vl x = typeof {a: 1}; res x;").unwrap();
     assert_eq!(result, Value::String("object".to_string()));
 }
@@ -169,7 +169,7 @@ fn test_grouped_expressions() {
     // Parentheses for grouping
     let result = execute_script("vl x = (2 + 3) * 4; res x;").unwrap();
     assert_eq!(result, Value::Number(20.0));
-    
+
     let result = execute_script("vl x = 2 + (3 * 4); res x;").unwrap();
     assert_eq!(result, Value::Number(14.0));
 }
@@ -179,15 +179,15 @@ fn test_complex_expressions() {
     // Multiple operators
     let result = execute_script("vl x = 10 % 3 + 5 * 2; res x;").unwrap();
     assert_eq!(result, Value::Number(11.0));
-    
+
     // Comparison with arithmetic
     let result = execute_script("vl x = (5 + 3) > (2 * 4); res x;").unwrap();
     assert_eq!(result, Value::Boolean(false));
-    
+
     // Logical with comparison
     let result = execute_script("vl x = (5 > 3) && (2 < 4); res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
-    
+
     // Complex logical expression
     let result = execute_script("vl x = (5 > 3) || (2 > 4) && false; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));
@@ -208,7 +208,7 @@ fn test_else_clause() {
     "#;
     let result = execute_script(script).unwrap();
     assert_eq!(result, Value::Number(10.0));
-    
+
     // If with else - condition false
     let script = r#"
         vl x = 2;
@@ -252,11 +252,11 @@ fn test_operator_precedence() {
     // Multiplication before addition
     let result = execute_script("vl x = 2 + 3 * 4; res x;").unwrap();
     assert_eq!(result, Value::Number(14.0));
-    
+
     // Division before subtraction
     let result = execute_script("vl x = 10 - 8 / 2; res x;").unwrap();
     assert_eq!(result, Value::Number(6.0));
-    
+
     // Comparison before logical
     let result = execute_script("vl x = 5 > 3 && 2 < 4; res x;").unwrap();
     assert_eq!(result, Value::Boolean(true));

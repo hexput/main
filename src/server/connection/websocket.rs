@@ -1,12 +1,12 @@
 //! WebSocket server implementation
 
 use anyhow::Result;
-use futures::{StreamExt, SinkExt};
+use futures::{SinkExt, StreamExt};
+use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tokio_tungstenite::{accept_async, tungstenite::Message as WsMessage};
-use serde_json::Value as JsonValue;
 
 use crate::rpc::protocol::Message;
 use crate::server::context_manager::ContextManager;
@@ -28,11 +28,9 @@ struct RemoteMethodRequest {
     args: Vec<JsonValue>,
 }
 
-pub async fn run_server(
-    addr: &str,
-) -> Result<()> {
+pub async fn run_server(addr: &str) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
-    
+
     loop {
         match listener.accept().await {
             Ok((stream, peer_addr)) => {
@@ -49,24 +47,22 @@ pub async fn run_server(
     }
 }
 
-async fn handle_connection(
-    stream: TcpStream,
-) -> Result<()> {
+async fn handle_connection(stream: TcpStream) -> Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut write, mut read) = ws_stream.split();
-    
+
     // Create local ContextManager for this connection
     let manager = Arc::new(RwLock::new(ContextManager::new()));
-    
+
     // Create local pending_calls for this connection
     let pending_calls = crate::server::create_pending_calls();
-    
+
     // Create channels for sending outgoing messages
     // One channel for RPC protocol Messages (used by RPC handler)
     let (rpc_tx, mut rpc_rx) = mpsc::unbounded_channel::<Message>();
     // One channel for WebSocket messages (final output)
     let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<WsMessage>();
-    
+
     // Spawn task to convert RPC Messages to WebSocket messages
     let outgoing_tx_clone = outgoing_tx.clone();
     tokio::spawn(async move {
@@ -76,7 +72,7 @@ async fn handle_connection(
             }
         }
     });
-    
+
     // Spawn task to send WebSocket messages
     let outgoing_writer_task = tokio::spawn(async move {
         while let Some(msg) = outgoing_rx.recv().await {
@@ -85,7 +81,7 @@ async fn handle_connection(
             }
         }
     });
-    
+
     // Handle incoming messages
     while let Some(msg) = read.next().await {
         println!("DEBUG WS: Received raw WebSocket message");
@@ -106,22 +102,25 @@ async fn handle_connection(
                         }
                         _ => {}
                     }
-                    
+
                     // Spawn a new task to handle this message
                     let manager_clone = Arc::clone(&manager);
                     let pending_calls_clone = Arc::clone(&pending_calls);
                     let rpc_tx_clone = rpc_tx.clone();
                     let outgoing_tx_clone = outgoing_tx.clone();
-                    
+
                     tokio::spawn(async move {
                         if let Some(response) = handler::handle_message(
                             message,
                             &manager_clone,
                             &pending_calls_clone,
                             &rpc_tx_clone,
-                        ).await {
+                        )
+                        .await
+                        {
                             if let Ok(response_text) = serde_json::to_string(&response) {
-                                let _ = outgoing_tx_clone.send(WsMessage::Text(response_text.into()));
+                                let _ =
+                                    outgoing_tx_clone.send(WsMessage::Text(response_text.into()));
                             }
                         }
                     });
@@ -134,16 +133,19 @@ async fn handle_connection(
                     let pending_calls_clone = Arc::clone(&pending_calls);
                     let rpc_tx_clone = rpc_tx.clone();
                     let outgoing_tx_clone = outgoing_tx.clone();
-                    
+
                     tokio::spawn(async move {
                         if let Some(response) = handler::handle_message(
                             message,
                             &manager_clone,
                             &pending_calls_clone,
                             &rpc_tx_clone,
-                        ).await {
+                        )
+                        .await
+                        {
                             if let Ok(response_data) = serde_json::to_vec(&response) {
-                                let _ = outgoing_tx_clone.send(WsMessage::Binary(response_data.into()));
+                                let _ =
+                                    outgoing_tx_clone.send(WsMessage::Binary(response_data.into()));
                             }
                         }
                     });
@@ -169,8 +171,8 @@ async fn handle_connection(
             }
         }
     }
-    
+
     outgoing_writer_task.abort();
-    
+
     Ok(())
 }

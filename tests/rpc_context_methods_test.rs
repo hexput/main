@@ -1,4 +1,4 @@
-use hexput::rpc::{Dispatcher, Message, Request, Registry};
+use hexput::rpc::{Dispatcher, Message, Registry, Request};
 
 #[test]
 fn test_dispatch_function_in_default_context() {

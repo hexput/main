@@ -5,33 +5,33 @@
 //! - Execution limits
 //! - Capabilities
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use super::value::Value;
 use super::rpc_handler::RpcHandler;
+use super::value::Value;
 use crate::sandbox::Limits;
 use crate::semantic::capabilities::CapabilitySet;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct Context {
     /// Local variable bindings
     variables: Vec<HashMap<String, Value>>,
-    
+
     /// Execution limits
     limits: Limits,
-    
+
     /// Instruction counter
     instruction_count: usize,
-    
+
     /// Capabilities granted to this context
     capabilities: CapabilitySet,
-    
+
     /// Return value (if any)
     return_value: Option<Value>,
-    
+
     /// Control flow flags
     should_break: bool,
     should_continue: bool,
-    
+
     /// RPC handler for remote function calls
     rpc_handler: Option<Arc<dyn RpcHandler>>,
 }
@@ -62,7 +62,7 @@ impl Context {
             rpc_handler: None,
         }
     }
-    
+
     pub fn with_rpc_handler(
         limits: Limits,
         capabilities: CapabilitySet,
@@ -79,11 +79,11 @@ impl Context {
             rpc_handler: Some(rpc_handler),
         }
     }
-    
+
     pub fn set_rpc_handler(&mut self, handler: Arc<dyn RpcHandler>) {
         self.rpc_handler = Some(handler);
     }
-    
+
     pub fn rpc_handler(&self) -> Option<&Arc<dyn RpcHandler>> {
         self.rpc_handler.as_ref()
     }
@@ -126,9 +126,10 @@ impl Context {
     pub fn tick(&mut self) -> Result<(), crate::runtime::RuntimeError> {
         self.instruction_count += 1;
         if self.instruction_count > self.limits.max_instructions {
-            return Err(crate::runtime::RuntimeError::LimitExceeded(
-                format!("Maximum instruction count ({}) exceeded", self.limits.max_instructions)
-            ));
+            return Err(crate::runtime::RuntimeError::LimitExceeded(format!(
+                "Maximum instruction count ({}) exceeded",
+                self.limits.max_instructions
+            )));
         }
         Ok(())
     }

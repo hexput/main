@@ -1,8 +1,8 @@
 //! Name resolution and semantic analysis
 
-use crate::language::ast::*;
 use super::error::{SemanticError, SemanticResult};
-use super::symbols::{SymbolTable, SymbolKind};
+use super::symbols::{SymbolKind, SymbolTable};
+use crate::language::ast::*;
 
 /// Perform semantic analysis on an AST
 pub fn resolve(ast: &Ast) -> SemanticResult<()> {
@@ -35,45 +35,57 @@ impl Resolver {
                 self.resolve_expression(value)?;
                 self.symbols.declare(name.clone(), SymbolKind::Variable);
             }
-            Statement::CallbackDecl { name, params, body, .. } => {
+            Statement::CallbackDecl {
+                name, params, body, ..
+            } => {
                 self.symbols.declare(name.clone(), SymbolKind::Callback);
                 self.symbols.enter_scope();
-                
+
                 for param in params {
                     self.symbols.declare(param.clone(), SymbolKind::Parameter);
                 }
-                
+
                 for stmt in body {
                     self.resolve_statement(stmt)?;
                 }
-                
+
                 self.symbols.exit_scope();
             }
             Statement::Assignment { target, value, .. } => {
                 self.resolve_assign_target(target)?;
                 self.resolve_expression(value)?;
             }
-            Statement::Loop { var, iterable, body, .. } => {
+            Statement::Loop {
+                var,
+                iterable,
+                body,
+                ..
+            } => {
                 self.resolve_expression(iterable)?;
                 self.symbols.enter_scope();
                 self.symbols.declare(var.clone(), SymbolKind::Variable);
-                
+
                 for stmt in body {
                     self.resolve_statement(stmt)?;
                 }
-                
+
                 self.symbols.exit_scope();
             }
-            Statement::If { condition, then_body, else_body, .. } => {
+            Statement::If {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
                 self.resolve_expression(condition)?;
                 self.symbols.enter_scope();
-                
+
                 for stmt in then_body {
                     self.resolve_statement(stmt)?;
                 }
-                
+
                 self.symbols.exit_scope();
-                
+
                 if let Some(else_stmts) = else_body {
                     self.symbols.enter_scope();
                     for stmt in else_stmts {
@@ -154,7 +166,10 @@ impl Resolver {
             Expression::Grouped(expr) => {
                 self.resolve_expression(expr)?;
             }
-            Expression::Number(_) | Expression::String(_) | Expression::Boolean(_) | Expression::Undefined => {
+            Expression::Number(_)
+            | Expression::String(_)
+            | Expression::Boolean(_)
+            | Expression::Undefined => {
                 // Literals need no resolution
             }
         }

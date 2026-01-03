@@ -1,11 +1,10 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use hexput::rpc::protocol::{
-    Message, ExecutionStart, CodeRegister, CachedExecutionStart,
-    RegisterFunction,
+    CachedExecutionStart, CodeRegister, ExecutionStart, Message, RegisterFunction,
 };
 use serde_json::json;
-use std::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::time::timeout;
 
 const SERVER_ADDR: &str = "127.0.0.1:9199"; // Different port for benchmarks
@@ -55,9 +54,9 @@ async fn create_ws_client() -> (
         >,
     >,
 ) {
+    use futures::StreamExt;
     use tokio_tungstenite::connect_async;
-    use futures::{StreamExt};
-    
+
     let mut attempts = 0;
     loop {
         match connect_async(WS_URL).await {
@@ -76,7 +75,7 @@ async fn create_ws_client() -> (
 #[cfg(unix)]
 async fn create_unix_client() -> hexput::transport::unix_socket::UnixSocketTransport {
     use hexput::transport::unix_socket::UnixSocketTransport;
-    
+
     let mut attempts = 0;
     loop {
         match UnixSocketTransport::connect(UNIX_SOCKET_PATH).await {
@@ -107,7 +106,7 @@ async fn ws_send_receive(
 ) -> Message {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message as WsMessage;
-    
+
     let json = serde_json::to_string(&message).unwrap();
     write.send(WsMessage::Text(json.into())).await.unwrap();
 
@@ -115,7 +114,7 @@ async fn ws_send_receive(
         match timeout(TEST_TIMEOUT, read.next()).await {
             Ok(Some(Ok(WsMessage::Text(text)))) => {
                 let msg: Message = serde_json::from_str(&text).unwrap();
-                
+
                 let response_id = match &msg {
                     Message::Response(r) => Some(&r.response_id),
                     Message::ExecutionResult(r) => Some(&r.response_id),
@@ -123,7 +122,7 @@ async fn ws_send_receive(
                     Message::RegisterResponse(r) => Some(&r.response_id),
                     _ => None,
                 };
-                
+
                 if let Some(rid) = response_id {
                     if rid == &request_id {
                         return msg;
@@ -132,7 +131,7 @@ async fn ws_send_receive(
             }
             Ok(Some(Ok(WsMessage::Binary(data)))) => {
                 let msg: Message = serde_json::from_slice(&data).unwrap();
-                
+
                 let response_id = match &msg {
                     Message::Response(r) => Some(&r.response_id),
                     Message::ExecutionResult(r) => Some(&r.response_id),
@@ -140,7 +139,7 @@ async fn ws_send_receive(
                     Message::RegisterResponse(r) => Some(&r.response_id),
                     _ => None,
                 };
-                
+
                 if let Some(rid) = response_id {
                     if rid == &request_id {
                         return msg;
@@ -159,9 +158,9 @@ async fn unix_send_receive(
     request_id: String,
 ) -> Message {
     use hexput::transport::Transport;
-    
+
     transport.send(message).await.unwrap();
-    
+
     loop {
         match timeout(TEST_TIMEOUT, transport.recv()).await {
             Ok(Ok(Some(msg))) => {
@@ -172,7 +171,7 @@ async fn unix_send_receive(
                     Message::RegisterResponse(r) => Some(&r.response_id),
                     _ => None,
                 };
-                
+
                 if let Some(rid) = response_id {
                     if rid == &request_id {
                         return msg;
@@ -186,18 +185,18 @@ async fn unix_send_receive(
 
 fn bench_websocket_basic_execution(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     // Start server once
     runtime.block_on(async {
         let _server = start_bench_server().await;
         tokio::time::sleep(Duration::from_millis(500)).await;
     });
-    
+
     c.bench_function("ws_basic_execution", |b| {
         b.iter(|| {
             runtime.block_on(async {
                 let (mut write, mut read) = create_ws_client().await;
-                
+
                 let request_id = generate_request_id();
                 let _response = ws_send_receive(
                     &mut write,
@@ -210,7 +209,8 @@ fn bench_websocket_basic_execution(c: &mut Criterion) {
                         global_variables: json!({}),
                     }),
                     request_id,
-                ).await;
+                )
+                .await;
             })
         });
     });
@@ -218,12 +218,12 @@ fn bench_websocket_basic_execution(c: &mut Criterion) {
 
 fn bench_websocket_cached_execution(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("ws_cached_execution", |b| {
         b.iter(|| {
             runtime.block_on(async {
                 let (mut write, mut read) = create_ws_client().await;
-                
+
                 // Register code
                 let reg_id = generate_request_id();
                 let response = ws_send_receive(
@@ -236,13 +236,14 @@ fn bench_websocket_cached_execution(c: &mut Criterion) {
                         source: "vl result = x * 2; res result;".to_string(),
                     }),
                     reg_id,
-                ).await;
-                
+                )
+                .await;
+
                 let code_id = match response {
                     Message::CodeRegisterResponse(resp) => resp.code_id,
                     _ => panic!("Expected CodeRegisterResponse"),
                 };
-                
+
                 // Execute cached
                 let exec_id = generate_request_id();
                 let _response = ws_send_receive(
@@ -257,7 +258,8 @@ fn bench_websocket_cached_execution(c: &mut Criterion) {
                         }),
                     }),
                     exec_id,
-                ).await;
+                )
+                .await;
             })
         });
     });
@@ -265,12 +267,12 @@ fn bench_websocket_cached_execution(c: &mut Criterion) {
 
 fn bench_websocket_function_registration(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("ws_function_registration", |b| {
         b.iter(|| {
             runtime.block_on(async {
                 let (mut write, mut read) = create_ws_client().await;
-                
+
                 let request_id = generate_request_id();
                 let _response = ws_send_receive(
                     &mut write,
@@ -282,7 +284,8 @@ fn bench_websocket_function_registration(c: &mut Criterion) {
                         function_name: "benchFunc".to_string(),
                     }),
                     request_id,
-                ).await;
+                )
+                .await;
             })
         });
     });
@@ -290,21 +293,21 @@ fn bench_websocket_function_registration(c: &mut Criterion) {
 
 fn bench_websocket_complex_execution(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("ws_complex_execution", |b| {
         b.iter(|| {
             runtime.block_on(async {
-            let (mut write, mut read) = create_ws_client().await;
-            
-            let request_id = generate_request_id();
-            let _response = ws_send_receive(
-                &mut write,
-                &mut read,
-                Message::ExecutionStart(ExecutionStart {
-                    request_id: request_id.clone(),
-                    id: "bench_complex".to_string(),
-                    context_id: "bench_ctx".to_string(),
-                    source: r#"
+                let (mut write, mut read) = create_ws_client().await;
+
+                let request_id = generate_request_id();
+                let _response = ws_send_receive(
+                    &mut write,
+                    &mut read,
+                    Message::ExecutionStart(ExecutionStart {
+                        request_id: request_id.clone(),
+                        id: "bench_complex".to_string(),
+                        context_id: "bench_ctx".to_string(),
+                        source: r#"
                         vl data = {
                             values: [10, 20, 30, 40, 50],
                             multiplier: 2
@@ -320,11 +323,13 @@ fn bench_websocket_complex_execution(c: &mut Criterion) {
                         }
                         
                         res result;
-                    "#.to_string(),
-                    global_variables: json!({}),
-                }),
-                request_id,
-            ).await;
+                    "#
+                        .to_string(),
+                        global_variables: json!({}),
+                    }),
+                    request_id,
+                )
+                .await;
             })
         });
     });
@@ -332,12 +337,12 @@ fn bench_websocket_complex_execution(c: &mut Criterion) {
 
 fn bench_websocket_remote_function_call(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("ws_remote_function_call", |b| {
         b.iter(|| {
             runtime.block_on(async {
                 let (mut write, mut read) = create_ws_client().await;
-                
+
                 // Register a function
                 let reg_id = generate_request_id();
                 let _reg_response = ws_send_receive(
@@ -350,8 +355,9 @@ fn bench_websocket_remote_function_call(c: &mut Criterion) {
                         function_name: "remoteAdd".to_string(),
                     }),
                     reg_id,
-                ).await;
-                
+                )
+                .await;
+
                 // Call the remote function via script execution
                 let exec_id = generate_request_id();
                 let _response = ws_send_receive(
@@ -365,7 +371,8 @@ fn bench_websocket_remote_function_call(c: &mut Criterion) {
                         global_variables: json!({}),
                     }),
                     exec_id,
-                ).await;
+                )
+                .await;
             })
         });
     });
@@ -374,24 +381,25 @@ fn bench_websocket_remote_function_call(c: &mut Criterion) {
 #[cfg(unix)]
 fn bench_unix_socket_basic_execution(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("unix_basic_execution", |b| {
         b.iter(|| {
             runtime.block_on(async {
-            let mut transport = create_unix_client().await;
-            
-            let request_id = generate_request_id();
-            let _response = unix_send_receive(
-                &mut transport,
-                Message::ExecutionStart(ExecutionStart {
-                    request_id: request_id.clone(),
-                    id: "bench_1".to_string(),
-                    context_id: "bench_ctx".to_string(),
-                    source: "vl x = 10; vl y = 20; res x + y;".to_string(),
-                    global_variables: json!({}),
-                }),
-                request_id,
-            ).await;
+                let mut transport = create_unix_client().await;
+
+                let request_id = generate_request_id();
+                let _response = unix_send_receive(
+                    &mut transport,
+                    Message::ExecutionStart(ExecutionStart {
+                        request_id: request_id.clone(),
+                        id: "bench_1".to_string(),
+                        context_id: "bench_ctx".to_string(),
+                        source: "vl x = 10; vl y = 20; res x + y;".to_string(),
+                        global_variables: json!({}),
+                    }),
+                    request_id,
+                )
+                .await;
             })
         });
     });
@@ -400,44 +408,46 @@ fn bench_unix_socket_basic_execution(c: &mut Criterion) {
 #[cfg(unix)]
 fn bench_unix_socket_cached_execution(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("unix_cached_execution", |b| {
         b.iter(|| {
             runtime.block_on(async {
-            let mut transport = create_unix_client().await;
-            
-            // Register code
-            let reg_id = generate_request_id();
-            let response = unix_send_receive(
-                &mut transport,
-                Message::CodeRegister(CodeRegister {
-                    request_id: reg_id.clone(),
-                    id: "reg".to_string(),
-                    context_id: "bench_ctx".to_string(),
-                    source: "vl result = x * 2; res result;".to_string(),
-                }),
-                reg_id,
-            ).await;
-            
-            let code_id = match response {
-                Message::CodeRegisterResponse(resp) => resp.code_id,
-                _ => panic!("Expected CodeRegisterResponse"),
-            };
-            
-            // Execute cached
-            let exec_id = generate_request_id();
-            let _response = unix_send_receive(
-                &mut transport,
-                Message::CachedExecutionStart(CachedExecutionStart {
-                    request_id: exec_id.clone(),
-                    code_id,
-                    global_variables: json!({
-                        "__context_id": "bench_ctx",
-                        "x": 42
+                let mut transport = create_unix_client().await;
+
+                // Register code
+                let reg_id = generate_request_id();
+                let response = unix_send_receive(
+                    &mut transport,
+                    Message::CodeRegister(CodeRegister {
+                        request_id: reg_id.clone(),
+                        id: "reg".to_string(),
+                        context_id: "bench_ctx".to_string(),
+                        source: "vl result = x * 2; res result;".to_string(),
                     }),
-                }),
-                exec_id,
-            ).await;
+                    reg_id,
+                )
+                .await;
+
+                let code_id = match response {
+                    Message::CodeRegisterResponse(resp) => resp.code_id,
+                    _ => panic!("Expected CodeRegisterResponse"),
+                };
+
+                // Execute cached
+                let exec_id = generate_request_id();
+                let _response = unix_send_receive(
+                    &mut transport,
+                    Message::CachedExecutionStart(CachedExecutionStart {
+                        request_id: exec_id.clone(),
+                        code_id,
+                        global_variables: json!({
+                            "__context_id": "bench_ctx",
+                            "x": 42
+                        }),
+                    }),
+                    exec_id,
+                )
+                .await;
             })
         });
     });
@@ -446,20 +456,20 @@ fn bench_unix_socket_cached_execution(c: &mut Criterion) {
 #[cfg(unix)]
 fn bench_unix_socket_complex_execution(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("unix_complex_execution", |b| {
         b.iter(|| {
             runtime.block_on(async {
-            let mut transport = create_unix_client().await;
-            
-            let request_id = generate_request_id();
-            let _response = unix_send_receive(
-                &mut transport,
-                Message::ExecutionStart(ExecutionStart {
-                    request_id: request_id.clone(),
-                    id: "bench_complex".to_string(),
-                    context_id: "bench_ctx".to_string(),
-                    source: r#"
+                let mut transport = create_unix_client().await;
+
+                let request_id = generate_request_id();
+                let _response = unix_send_receive(
+                    &mut transport,
+                    Message::ExecutionStart(ExecutionStart {
+                        request_id: request_id.clone(),
+                        id: "bench_complex".to_string(),
+                        context_id: "bench_ctx".to_string(),
+                        source: r#"
                         vl data = {
                             values: [10, 20, 30, 40, 50],
                             multiplier: 2
@@ -475,11 +485,13 @@ fn bench_unix_socket_complex_execution(c: &mut Criterion) {
                         }
                         
                         res result;
-                    "#.to_string(),
-                    global_variables: json!({}),
-                }),
-                request_id,
-            ).await;
+                    "#
+                        .to_string(),
+                        global_variables: json!({}),
+                    }),
+                    request_id,
+                )
+                .await;
             })
         });
     });
@@ -488,12 +500,12 @@ fn bench_unix_socket_complex_execution(c: &mut Criterion) {
 #[cfg(unix)]
 fn bench_unix_socket_remote_function_call(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("unix_remote_function_call", |b| {
         b.iter(|| {
             runtime.block_on(async {
                 let mut transport = create_unix_client().await;
-                
+
                 // Register a function
                 let reg_id = generate_request_id();
                 let _reg_response = unix_send_receive(
@@ -505,8 +517,9 @@ fn bench_unix_socket_remote_function_call(c: &mut Criterion) {
                         function_name: "remoteAdd".to_string(),
                     }),
                     reg_id,
-                ).await;
-                
+                )
+                .await;
+
                 // Call the remote function via script execution
                 let exec_id = generate_request_id();
                 let _response = unix_send_receive(
@@ -519,7 +532,8 @@ fn bench_unix_socket_remote_function_call(c: &mut Criterion) {
                         global_variables: json!({}),
                     }),
                     exec_id,
-                ).await;
+                )
+                .await;
             })
         });
     });

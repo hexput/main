@@ -1,6 +1,6 @@
-use std::hint::black_box;
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use hexput::{parse, runtime::Context, sandbox::Limits};
+use std::hint::black_box;
 
 fn bench_parse(c: &mut Criterion) {
     let source = r#"
@@ -10,14 +10,12 @@ fn bench_parse(c: &mut Criterion) {
         res result;
     "#;
 
-    c.bench_function("parse_simple", |b| {
-        b.iter(|| parse(black_box(source)))
-    });
+    c.bench_function("parse_simple", |b| b.iter(|| parse(black_box(source))));
 }
 
 fn bench_non_cached_execution(c: &mut Criterion) {
     let mut group = c.benchmark_group("non_cached_execution");
-    
+
     // Simple arithmetic - parse + execute on every iteration
     let simple_source = r#"
         vl x = 42;
@@ -25,7 +23,7 @@ fn bench_non_cached_execution(c: &mut Criterion) {
         vl result = x + y;
         res result;
     "#;
-    
+
     group.bench_function("simple_arithmetic", |b| {
         b.iter(|| {
             let ast = parse(simple_source).unwrap();
@@ -44,7 +42,7 @@ fn bench_non_cached_execution(c: &mut Criterion) {
         }
         res sum;
     "#;
-    
+
     group.bench_function("loop_sum", |b| {
         b.iter(|| {
             let ast = parse(loop_source).unwrap();
@@ -72,7 +70,7 @@ fn bench_non_cached_execution(c: &mut Criterion) {
         
         res result;
     "#;
-    
+
     group.bench_function("complex_nested", |b| {
         b.iter(|| {
             let ast = parse(complex_source).unwrap();
@@ -99,7 +97,7 @@ fn bench_non_cached_execution(c: &mut Criterion) {
         
         res results;
     "#;
-    
+
     group.bench_function("with_callbacks", |b| {
         b.iter(|| {
             let ast = parse(callback_source).unwrap();
@@ -108,13 +106,13 @@ fn bench_non_cached_execution(c: &mut Criterion) {
             hexput::runtime::vm::execute(&ast, &mut context)
         })
     });
-    
+
     group.finish();
 }
 
 fn bench_cached_execution(c: &mut Criterion) {
     let mut group = c.benchmark_group("cached_execution");
-    
+
     // Simple arithmetic with cached AST - only execute
     let simple_source = r#"
         vl x = 42;
@@ -123,7 +121,7 @@ fn bench_cached_execution(c: &mut Criterion) {
         res result;
     "#;
     let simple_ast = parse(simple_source).unwrap();
-    
+
     group.bench_function("simple_arithmetic", |b| {
         b.iter(|| {
             let limits = Limits::unlimited();
@@ -142,7 +140,7 @@ fn bench_cached_execution(c: &mut Criterion) {
         res sum;
     "#;
     let loop_ast = parse(loop_source).unwrap();
-    
+
     group.bench_function("loop_sum", |b| {
         b.iter(|| {
             let limits = Limits::unlimited();
@@ -170,7 +168,7 @@ fn bench_cached_execution(c: &mut Criterion) {
         res result;
     "#;
     let complex_ast = parse(complex_source).unwrap();
-    
+
     group.bench_function("complex_nested", |b| {
         b.iter(|| {
             let limits = Limits::unlimited();
@@ -197,7 +195,7 @@ fn bench_cached_execution(c: &mut Criterion) {
         res results;
     "#;
     let callback_ast = parse(callback_source).unwrap();
-    
+
     group.bench_function("with_callbacks", |b| {
         b.iter(|| {
             let limits = Limits::unlimited();
@@ -205,13 +203,13 @@ fn bench_cached_execution(c: &mut Criterion) {
             hexput::runtime::vm::execute(&callback_ast, &mut context)
         })
     });
-    
+
     group.finish();
 }
 
 fn bench_parse_vs_execute(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse_vs_execute_breakdown");
-    
+
     let source = r#"
         vl sum = 0;
         vl numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -220,12 +218,10 @@ fn bench_parse_vs_execute(c: &mut Criterion) {
         }
         res sum;
     "#;
-    
+
     // Parse only
-    group.bench_function("parse_only", |b| {
-        b.iter(|| parse(black_box(source)))
-    });
-    
+    group.bench_function("parse_only", |b| b.iter(|| parse(black_box(source))));
+
     // Execute only (pre-parsed)
     let ast = parse(source).unwrap();
     group.bench_function("execute_only", |b| {
@@ -235,7 +231,7 @@ fn bench_parse_vs_execute(c: &mut Criterion) {
             hexput::runtime::vm::execute(&ast, &mut context)
         })
     });
-    
+
     // Parse + Execute (non-cached)
     group.bench_function("parse_and_execute", |b| {
         b.iter(|| {
@@ -245,19 +241,23 @@ fn bench_parse_vs_execute(c: &mut Criterion) {
             hexput::runtime::vm::execute(&ast, &mut context)
         })
     });
-    
+
     group.finish();
 }
 
 fn bench_execution_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("execution_scaling");
-    
+
     // Benchmark how cached execution scales with different script complexities
     for size in [10, 50, 100].iter() {
         // Generate an array of numbers
         let numbers: Vec<i32> = (0..*size).collect();
-        let numbers_str = numbers.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
-        
+        let numbers_str = numbers
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
         let source = format!(
             r#"
             vl sum = 0;
@@ -269,35 +269,27 @@ fn bench_execution_scaling(c: &mut Criterion) {
             "#,
             numbers_str
         );
-        
+
         let ast = parse(&source).unwrap();
-        
-        group.bench_with_input(
-            BenchmarkId::new("cached", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let limits = Limits::unlimited();
-                    let mut context = Context::new(limits);
-                    hexput::runtime::vm::execute(&ast, &mut context)
-                })
-            }
-        );
-        
-        group.bench_with_input(
-            BenchmarkId::new("non_cached", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let ast = parse(&source).unwrap();
-                    let limits = Limits::unlimited();
-                    let mut context = Context::new(limits);
-                    hexput::runtime::vm::execute(&ast, &mut context)
-                })
-            }
-        );
+
+        group.bench_with_input(BenchmarkId::new("cached", size), size, |b, _| {
+            b.iter(|| {
+                let limits = Limits::unlimited();
+                let mut context = Context::new(limits);
+                hexput::runtime::vm::execute(&ast, &mut context)
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("non_cached", size), size, |b, _| {
+            b.iter(|| {
+                let ast = parse(&source).unwrap();
+                let limits = Limits::unlimited();
+                let mut context = Context::new(limits);
+                hexput::runtime::vm::execute(&ast, &mut context)
+            })
+        });
     }
-    
+
     group.finish();
 }
 

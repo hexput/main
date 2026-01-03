@@ -2,10 +2,10 @@
 //!
 //! This allows the server to send messages back to clients for remote function calls.
 
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
-use serde_json::Value as JsonValue;
+use tokio::sync::{mpsc, RwLock};
 
 /// Unique connection ID
 pub type ConnectionId = String;
@@ -48,7 +48,7 @@ impl ConnectionHandle {
             method_call_tx,
         }
     }
-    
+
     /// Call a remote function on the client and wait for result (DEPRECATED - use send_function_call + pending_calls)
     pub async fn call_function(
         &self,
@@ -58,10 +58,11 @@ impl ConnectionHandle {
     ) -> Result<JsonValue, String> {
         // Deprecated - kept for backwards compatibility
         // New code should use send_function_call + pending_calls
-        self.send_function_call(request_id, function_name, args).await?;
+        self.send_function_call(request_id, function_name, args)
+            .await?;
         Err("call_function is deprecated, use send_function_call instead".to_string())
     }
-    
+
     /// Send a remote function call request (non-blocking)
     pub async fn send_function_call(
         &self,
@@ -78,7 +79,7 @@ impl ConnectionHandle {
             .map_err(|_| "Connection closed".to_string())?;
         Ok(())
     }
-    
+
     /// Call a remote method on the client and wait for result (DEPRECATED)
     pub async fn call_method(
         &self,
@@ -88,10 +89,11 @@ impl ConnectionHandle {
         args: Vec<JsonValue>,
     ) -> Result<JsonValue, String> {
         // Deprecated - kept for backwards compatibility
-        self.send_method_call(request_id, object_id, method_name, args).await?;
+        self.send_method_call(request_id, object_id, method_name, args)
+            .await?;
         Err("call_method is deprecated, use send_method_call instead".to_string())
     }
-    
+
     /// Send a remote method call request (non-blocking)
     pub async fn send_method_call(
         &self,
@@ -118,33 +120,39 @@ pub struct ConnectionRegistry {
     connections: HashMap<String, ConnectionHandle>,
 }
 
+impl Default for ConnectionRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionRegistry {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
         }
     }
-    
+
     /// Register a connection for a context
     pub fn register_connection(&mut self, context_id: String, handle: ConnectionHandle) {
         self.connections.insert(context_id, handle);
     }
-    
+
     /// Unregister a connection
     pub fn unregister_connection(&mut self, context_id: &str) -> bool {
         self.connections.remove(context_id).is_some()
     }
-    
+
     /// Get connection handle for a context
     pub fn get_connection(&self, context_id: &str) -> Option<&ConnectionHandle> {
         self.connections.get(context_id)
     }
-    
+
     /// Check if context has an active connection
     pub fn has_connection(&self, context_id: &str) -> bool {
         self.connections.contains_key(context_id)
     }
-    
+
     /// Get all registered context IDs
     pub fn list_contexts(&self) -> Vec<String> {
         self.connections.keys().cloned().collect()

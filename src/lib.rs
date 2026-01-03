@@ -14,16 +14,16 @@
 //! - `util`: Shared utilities
 
 pub mod language;
-pub mod semantic;
-pub mod runtime;
 pub mod rpc;
-pub mod transport;
+pub mod runtime;
 pub mod sandbox;
-pub mod util;
+pub mod semantic;
 pub mod server;
+pub mod transport;
+pub mod util;
 
 pub use language::parse;
-pub use runtime::{Context, execute};
+pub use runtime::{execute, Context};
 pub use sandbox::Limits;
 
 /// Library version

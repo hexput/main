@@ -2,10 +2,10 @@
 //!
 //! This module executes parsed and resolved ASTs.
 
-use crate::language::ast::*;
 use super::context::Context;
-use super::value::Value;
 use super::error::{RuntimeError, RuntimeResult};
+use super::value::Value;
+use crate::language::ast::*;
 use std::collections::HashMap;
 
 pub fn execute(ast: &Ast, context: &mut Context) -> RuntimeResult<Value> {
@@ -32,12 +32,16 @@ impl<'a> Vm<'a> {
 
             if self.context.should_break() {
                 self.context.clear_control_flags();
-                return Err(RuntimeError::General("'end' used outside of a loop".to_string()));
+                return Err(RuntimeError::General(
+                    "'end' used outside of a loop".to_string(),
+                ));
             }
 
             if self.context.should_continue() {
                 self.context.clear_control_flags();
-                return Err(RuntimeError::General("'continue' used outside of a loop".to_string()));
+                return Err(RuntimeError::General(
+                    "'continue' used outside of a loop".to_string(),
+                ));
             }
         }
         Ok(Value::Undefined)
@@ -51,7 +55,9 @@ impl<'a> Vm<'a> {
                 let val = self.evaluate_expression(value)?;
                 self.context.define(name.clone(), val);
             }
-            Statement::CallbackDecl { name, params, body, .. } => {
+            Statement::CallbackDecl {
+                name, params, body, ..
+            } => {
                 let callback = Value::Callback {
                     params: params.clone(),
                     body: body.clone(),
@@ -62,18 +68,31 @@ impl<'a> Vm<'a> {
                 let val = self.evaluate_expression(value)?;
                 self.assign_target(target, val)?;
             }
-            Statement::Loop { var, iterable, body, .. } => {
+            Statement::Loop {
+                var,
+                iterable,
+                body,
+                ..
+            } => {
                 let iter_val = self.evaluate_expression(iterable)?;
                 self.execute_loop(var, iter_val, body)?;
             }
-            Statement::If { condition, then_body, else_body, .. } => {
+            Statement::If {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
                 let cond_val = self.evaluate_expression(condition)?;
                 if cond_val.is_truthy() {
                     self.context.enter_scope();
                     for stmt in then_body {
                         self.execute_statement(stmt)?;
 
-                        if self.context.has_return() || self.context.should_break() || self.context.should_continue() {
+                        if self.context.has_return()
+                            || self.context.should_break()
+                            || self.context.should_continue()
+                        {
                             self.context.exit_scope();
                             return Ok(());
                         }
@@ -84,7 +103,10 @@ impl<'a> Vm<'a> {
                     for stmt in else_stmts {
                         self.execute_statement(stmt)?;
 
-                        if self.context.has_return() || self.context.should_break() || self.context.should_continue() {
+                        if self.context.has_return()
+                            || self.context.should_break()
+                            || self.context.should_continue()
+                        {
                             self.context.exit_scope();
                             return Ok(());
                         }
@@ -107,7 +129,10 @@ impl<'a> Vm<'a> {
                 for stmt in statements {
                     self.execute_statement(stmt)?;
 
-                    if self.context.has_return() || self.context.should_break() || self.context.should_continue() {
+                    if self.context.has_return()
+                        || self.context.should_break()
+                        || self.context.should_continue()
+                    {
                         self.context.exit_scope();
                         return Ok(());
                     }
@@ -122,14 +147,21 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn execute_loop(&mut self, var: &str, iterable: Value, body: &[Statement]) -> RuntimeResult<()> {
+    fn execute_loop(
+        &mut self,
+        var: &str,
+        iterable: Value,
+        body: &[Statement],
+    ) -> RuntimeResult<()> {
         let items = match iterable {
             Value::Array(arr) => arr,
             Value::Object(obj) => obj.keys().map(|k| Value::String(k.clone())).collect(),
-            _ => return Err(RuntimeError::TypeError {
-                expected: "array or object".to_string(),
-                got: iterable.type_name().to_string(),
-            }),
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "array or object".to_string(),
+                    got: iterable.type_name().to_string(),
+                })
+            }
         };
 
         self.context.enter_scope();
@@ -170,10 +202,10 @@ impl<'a> Vm<'a> {
             Expression::Number(n) => Ok(Value::Number(*n)),
             Expression::String(s) => Ok(Value::String(s.clone())),
             Expression::Boolean(b) => Ok(Value::Boolean(*b)),
-            Expression::Identifier(name) => {
-                self.context.get(name)
-                    .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone()))
-            }
+            Expression::Identifier(name) => self
+                .context
+                .get(name)
+                .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone())),
             Expression::Object(properties) => {
                 let mut obj = HashMap::new();
                 for (key, value_expr) in properties {
@@ -190,9 +222,7 @@ impl<'a> Vm<'a> {
                 }
                 Ok(Value::Array(arr))
             }
-            Expression::Call { callee, args } => {
-                self.execute_call(callee, args)
-            }
+            Expression::Call { callee, args } => self.execute_call(callee, args),
             Expression::Binary { op, left, right } => {
                 let left_val = self.evaluate_expression(left)?;
                 let right_val = self.evaluate_expression(right)?;
@@ -211,9 +241,8 @@ impl<'a> Vm<'a> {
                 let val = self.evaluate_expression(expr)?;
                 match val {
                     Value::Object(obj) => {
-                        let keys: Vec<Value> = obj.keys()
-                            .map(|k| Value::String(k.clone()))
-                            .collect();
+                        let keys: Vec<Value> =
+                            obj.keys().map(|k| Value::String(k.clone())).collect();
                         Ok(Value::Array(keys))
                     }
                     _ => Err(RuntimeError::TypeError {
@@ -251,9 +280,7 @@ impl<'a> Vm<'a> {
                 let val = self.evaluate_expression(expr)?;
                 Ok(Value::String(val.type_name().to_string()))
             }
-            Expression::Grouped(expr) => {
-                self.evaluate_expression(expr)
-            }
+            Expression::Grouped(expr) => self.evaluate_expression(expr),
         }
     }
 
@@ -269,10 +296,12 @@ impl<'a> Vm<'a> {
             match callback_val {
                 Value::Callback { params, body } => {
                     if params.len() != arg_values.len() {
-                        return Err(RuntimeError::General(
-                            format!("Function {} expects {} arguments, got {}", 
-                                callee, params.len(), arg_values.len())
-                        ));
+                        return Err(RuntimeError::General(format!(
+                            "Function {} expects {} arguments, got {}",
+                            callee,
+                            params.len(),
+                            arg_values.len()
+                        )));
                     }
 
                     self.context.enter_scope();
@@ -289,13 +318,17 @@ impl<'a> Vm<'a> {
                         if self.context.should_break() {
                             self.context.clear_control_flags();
                             self.context.exit_scope();
-                            return Err(RuntimeError::General("'end' used outside of a loop".to_string()));
+                            return Err(RuntimeError::General(
+                                "'end' used outside of a loop".to_string(),
+                            ));
                         }
 
                         if self.context.should_continue() {
                             self.context.clear_control_flags();
                             self.context.exit_scope();
-                            return Err(RuntimeError::General("'continue' used outside of a loop".to_string()));
+                            return Err(RuntimeError::General(
+                                "'continue' used outside of a loop".to_string(),
+                            ));
                         }
 
                         if let Some(ret_val) = self.context.take_return() {
@@ -319,35 +352,36 @@ impl<'a> Vm<'a> {
         // Not found locally - try remote call
         self.try_remote_call(callee, arg_values)
     }
-    
+
     fn try_remote_call(&self, function: &str, args: Vec<Value>) -> RuntimeResult<Value> {
         // Check if remote calls are allowed
         if !self.context.capabilities().can_call_remote(function) {
-            return Err(RuntimeError::PermissionDenied(
-                format!("Not allowed to call remote function '{}'", function)
-            ));
+            return Err(RuntimeError::PermissionDenied(format!(
+                "Not allowed to call remote function '{}'",
+                function
+            )));
         }
-        
+
         // Get RPC handler
-        let handler = self.context.rpc_handler()
+        let handler = self
+            .context
+            .rpc_handler()
             .ok_or_else(|| RuntimeError::UndefinedFunction(function.to_string()))?;
-        
+
         // Make the remote call (blocks from script's perspective)
         handler.call_remote(function, args)
     }
 
     fn evaluate_binary_op(&self, op: BinaryOp, left: Value, right: Value) -> RuntimeResult<Value> {
         match op {
-            BinaryOp::Add => {
-                match (left, right) {
-                    (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
-                    (Value::String(l), Value::String(r)) => Ok(Value::String(format!("{}{}", l, r))),
-                    (l, r) => Err(RuntimeError::TypeError {
-                        expected: "number or string".to_string(),
-                        got: format!("{} and {}", l.type_name(), r.type_name()),
-                    }),
-                }
-            }
+            BinaryOp::Add => match (left, right) {
+                (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
+                (Value::String(l), Value::String(r)) => Ok(Value::String(format!("{}{}", l, r))),
+                (l, r) => Err(RuntimeError::TypeError {
+                    expected: "number or string".to_string(),
+                    got: format!("{} and {}", l.type_name(), r.type_name()),
+                }),
+            },
             BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
                 let l = left.as_number().ok_or_else(|| RuntimeError::TypeError {
                     expected: "number".to_string(),
@@ -426,7 +460,11 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn evaluate_unary_op(&self, op: crate::language::ast::UnaryOp, operand: Value) -> RuntimeResult<Value> {
+    fn evaluate_unary_op(
+        &self,
+        op: crate::language::ast::UnaryOp,
+        operand: Value,
+    ) -> RuntimeResult<Value> {
         use crate::language::ast::UnaryOp;
         match op {
             UnaryOp::Neg => {
@@ -436,9 +474,7 @@ impl<'a> Vm<'a> {
                 })?;
                 Ok(Value::Number(-n))
             }
-            UnaryOp::Not => {
-                Ok(Value::Boolean(!operand.is_truthy()))
-            }
+            UnaryOp::Not => Ok(Value::Boolean(!operand.is_truthy())),
             UnaryOp::Plus => {
                 let n = operand.as_number().ok_or_else(|| RuntimeError::TypeError {
                     expected: "number".to_string(),
@@ -461,21 +497,24 @@ impl<'a> Vm<'a> {
 
     fn access_property(&self, object: Value, property: &str) -> RuntimeResult<Value> {
         match object {
-            Value::Object(obj) => {
-                Ok(obj.get(property).cloned().unwrap_or(Value::Undefined))
-            }
-            Value::MethodObject { object_id: _, fields } => {
+            Value::Object(obj) => Ok(obj.get(property).cloned().unwrap_or(Value::Undefined)),
+            Value::MethodObject {
+                object_id: _,
+                fields,
+            } => {
                 // Block access to secret_data from script execution
                 if property == "secret_data" {
                     return Err(RuntimeError::InvalidPropertyAccess(
-                        "Cannot access 'secret_data' from script".to_string()
+                        "Cannot access 'secret_data' from script".to_string(),
                     ));
                 }
                 Ok(fields.get(property).cloned().unwrap_or(Value::Undefined))
             }
-            _ => Err(RuntimeError::InvalidPropertyAccess(
-                format!("Cannot access property '{}' on {}", property, object.type_name())
-            )),
+            _ => Err(RuntimeError::InvalidPropertyAccess(format!(
+                "Cannot access property '{}' on {}",
+                property,
+                object.type_name()
+            ))),
         }
     }
 
@@ -511,16 +550,23 @@ impl<'a> Vm<'a> {
         }
         Ok(())
     }
-    
-    fn assign_index(&mut self, object_expr: &Expression, index_expr: &Expression, value: Value) -> RuntimeResult<()> {
+
+    fn assign_index(
+        &mut self,
+        object_expr: &Expression,
+        index_expr: &Expression,
+        value: Value,
+    ) -> RuntimeResult<()> {
         // For nested assignments like arr[0].prop or obj.arr[1], we need to handle recursively
         match object_expr {
             Expression::Identifier(name) => {
                 // Simple case: arr[index] = value
                 let index_val = self.evaluate_expression(index_expr)?;
-                let mut obj = self.context.get(name)
+                let mut obj = self
+                    .context
+                    .get(name)
                     .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone()))?;
-                
+
                 match (&mut obj, index_val) {
                     (Value::Array(arr), Value::Number(idx)) => {
                         let idx_usize = idx as usize;
@@ -542,17 +588,20 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
-            Expression::Index { object: nested_obj, index: nested_idx } => {
+            Expression::Index {
+                object: nested_obj,
+                index: nested_idx,
+            } => {
                 // Nested index: arr[i][j] = value
                 // We need to get arr[i], modify it, then update arr[i]
                 let index_val = self.evaluate_expression(index_expr)?;
-                
+
                 // Evaluate the nested target to get the container
                 let container = self.evaluate_expression(&Expression::Index {
                     object: nested_obj.clone(),
                     index: nested_idx.clone(),
                 })?;
-                
+
                 // Apply the mutation
                 let mut updated = container.clone();
                 match (&mut updated, index_val) {
@@ -573,19 +622,22 @@ impl<'a> Vm<'a> {
                         });
                     }
                 }
-                
+
                 // Now recursively assign back
                 self.assign_index(nested_obj, nested_idx, updated)?;
             }
-            Expression::Property { object: nested_obj, property: nested_prop } => {
+            Expression::Property {
+                object: nested_obj,
+                property: nested_prop,
+            } => {
                 // Property then index: obj.arr[i] = value
                 let index_val = self.evaluate_expression(index_expr)?;
-                
+
                 let container = self.evaluate_expression(&Expression::Property {
                     object: nested_obj.clone(),
                     property: nested_prop.clone(),
                 })?;
-                
+
                 let mut updated = container.clone();
                 match (&mut updated, index_val) {
                     (Value::Array(arr), Value::Number(idx)) => {
@@ -605,35 +657,45 @@ impl<'a> Vm<'a> {
                         });
                     }
                 }
-                
+
                 self.assign_property(nested_obj, nested_prop, updated)?;
             }
             _ => {
                 return Err(RuntimeError::General(
-                    "Invalid assignment target: complex expression".to_string()
+                    "Invalid assignment target: complex expression".to_string(),
                 ));
             }
         }
         Ok(())
     }
-    
-    fn assign_property(&mut self, object_expr: &Expression, property: &str, value: Value) -> RuntimeResult<()> {
+
+    fn assign_property(
+        &mut self,
+        object_expr: &Expression,
+        property: &str,
+        value: Value,
+    ) -> RuntimeResult<()> {
         match object_expr {
             Expression::Identifier(name) => {
                 // Simple case: obj.prop = value
-                let mut obj = self.context.get(name)
+                let mut obj = self
+                    .context
+                    .get(name)
                     .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone()))?;
-                
+
                 match &mut obj {
                     Value::Object(obj_map) => {
                         obj_map.insert(property.to_string(), value);
                         self.context.set(name, obj);
                     }
-                    Value::MethodObject { object_id: _, fields } => {
+                    Value::MethodObject {
+                        object_id: _,
+                        fields,
+                    } => {
                         // Block assignment to secret_data
                         if property == "secret_data" {
                             return Err(RuntimeError::InvalidPropertyAccess(
-                                "Cannot assign to 'secret_data'".to_string()
+                                "Cannot assign to 'secret_data'".to_string(),
                             ));
                         }
                         fields.insert(property.to_string(), value);
@@ -647,22 +709,28 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
-            Expression::Index { object: nested_obj, index: nested_idx } => {
+            Expression::Index {
+                object: nested_obj,
+                index: nested_idx,
+            } => {
                 // Index then property: arr[i].prop = value
                 let container = self.evaluate_expression(&Expression::Index {
                     object: nested_obj.clone(),
                     index: nested_idx.clone(),
                 })?;
-                
+
                 let mut updated = container.clone();
                 match &mut updated {
                     Value::Object(obj_map) => {
                         obj_map.insert(property.to_string(), value);
                     }
-                    Value::MethodObject { object_id: _, fields } => {
+                    Value::MethodObject {
+                        object_id: _,
+                        fields,
+                    } => {
                         if property == "secret_data" {
                             return Err(RuntimeError::InvalidPropertyAccess(
-                                "Cannot assign to 'secret_data'".to_string()
+                                "Cannot assign to 'secret_data'".to_string(),
                             ));
                         }
                         fields.insert(property.to_string(), value);
@@ -674,25 +742,31 @@ impl<'a> Vm<'a> {
                         });
                     }
                 }
-                
+
                 self.assign_index(nested_obj, nested_idx, updated)?;
             }
-            Expression::Property { object: nested_obj, property: nested_prop } => {
+            Expression::Property {
+                object: nested_obj,
+                property: nested_prop,
+            } => {
                 // Property then property: obj.outer.inner = value
                 let container = self.evaluate_expression(&Expression::Property {
                     object: nested_obj.clone(),
                     property: nested_prop.clone(),
                 })?;
-                
+
                 let mut updated = container.clone();
                 match &mut updated {
                     Value::Object(obj_map) => {
                         obj_map.insert(property.to_string(), value);
                     }
-                    Value::MethodObject { object_id: _, fields } => {
+                    Value::MethodObject {
+                        object_id: _,
+                        fields,
+                    } => {
                         if property == "secret_data" {
                             return Err(RuntimeError::InvalidPropertyAccess(
-                                "Cannot assign to 'secret_data'".to_string()
+                                "Cannot assign to 'secret_data'".to_string(),
                             ));
                         }
                         fields.insert(property.to_string(), value);
@@ -704,12 +778,12 @@ impl<'a> Vm<'a> {
                         });
                     }
                 }
-                
+
                 self.assign_property(nested_obj, nested_prop, updated)?;
             }
             _ => {
                 return Err(RuntimeError::General(
-                    "Invalid assignment target: complex expression".to_string()
+                    "Invalid assignment target: complex expression".to_string(),
                 ));
             }
         }

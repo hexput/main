@@ -56,11 +56,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 1. Create a named pipe server
         // 2. Listen for incoming connections
         // 3. Process hexput scripts via RPC
-        
+
         let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(async {
-            run_hexput_service().await
-        })?;
+        runtime.block_on(async { run_hexput_service().await })?;
 
         // Tell Windows we're stopping
         status_handle.set_service_status(ServiceStatus {
@@ -83,9 +81,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 2. Accept connections
         // 3. Process RPC requests
         // 4. Execute hexput scripts with proper sandboxing
-        
+
         println!("Hexput service running...");
-        
+
         // For now, just keep running until stopped
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;

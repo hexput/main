@@ -9,7 +9,7 @@ use std::collections::HashSet;
 pub enum Capability {
     /// Call a specific remote function
     CallRemote(String),
-    
+
     /// Access a specific resource
     AccessResource(String),
 }
@@ -46,12 +46,12 @@ impl CapabilitySet {
         if self.has(&Capability::CallRemote(function_name.to_string())) {
             return true;
         }
-        
+
         // Check for wildcard
         if self.has(&Capability::CallRemote("*".to_string())) {
             return true;
         }
-        
+
         false
     }
 

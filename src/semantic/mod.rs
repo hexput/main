@@ -8,12 +8,12 @@
 //!
 //! This layer sits between syntax and execution.
 
-pub mod resolver;
-pub mod symbols;
 pub mod capabilities;
 pub mod error;
+pub mod resolver;
+pub mod symbols;
 
-pub use resolver::resolve;
-pub use symbols::SymbolTable;
 pub use capabilities::Capability;
 pub use error::SemanticError;
+pub use resolver::resolve;
+pub use symbols::SymbolTable;

@@ -40,7 +40,7 @@ impl NamedPipeTransport {
         let pipe = tokio::net::windows::named_pipe::ClientOptions::new()
             .open(name)
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
-        
+
         Ok(Self::from_client(pipe, name.to_string()))
     }
 
@@ -87,18 +87,21 @@ impl Transport for NamedPipeTransport {
     async fn send(&mut self, message: Message) -> Result<(), TransportError> {
         let json = serde_json::to_string(&message)
             .map_err(|e| TransportError::SerializationFailed(e.to_string()))?;
-        
+
         // Length-prefixed framing: send 4-byte length, then message
         let len = json.len() as u32;
-        self.write_all(&len.to_be_bytes()).await
+        self.write_all(&len.to_be_bytes())
+            .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))?;
-        
-        self.write_all(json.as_bytes()).await
+
+        self.write_all(json.as_bytes())
+            .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))?;
-        
-        self.flush().await
+
+        self.flush()
+            .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))?;
-        
+
         Ok(())
     }
 
@@ -106,26 +109,27 @@ impl Transport for NamedPipeTransport {
         // Read 4-byte length prefix
         let mut len_bytes = [0u8; 4];
         match self.read_exact(&mut len_bytes).await {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
             Err(e) => return Err(TransportError::ReceiveFailed(e.to_string())),
         }
-        
+
         let len = u32::from_be_bytes(len_bytes) as usize;
-        
+
         // Sanity check on message size (max 10MB)
         if len > 10 * 1024 * 1024 {
             return Err(TransportError::MessageTooLarge(len));
         }
-        
+
         // Read message
         let mut buffer = vec![0u8; len];
-        self.read_exact(&mut buffer).await
+        self.read_exact(&mut buffer)
+            .await
             .map_err(|e| TransportError::ReceiveFailed(e.to_string()))?;
-        
+
         let message = serde_json::from_slice(&buffer)
             .map_err(|e| TransportError::DeserializationFailed(e.to_string()))?;
-        
+
         Ok(Some(message))
     }
 
@@ -150,7 +154,7 @@ impl NamedPipeServerBuilder {
             .first_pipe_instance(true)
             .create(&self.name)
             .map_err(|e| TransportError::BindFailed(e.to_string()))?;
-        
+
         Ok(NamedPipeServerListener {
             server,
             name: self.name.clone(),
@@ -166,17 +170,22 @@ pub struct NamedPipeServerListener {
 
 impl NamedPipeServerListener {
     pub async fn accept(&mut self) -> Result<NamedPipeTransport, TransportError> {
-        self.server.connect().await
+        self.server
+            .connect()
+            .await
             .map_err(|e| TransportError::AcceptFailed(e.to_string()))?;
-        
+
         // Create next instance
         let next_server = ServerOptions::new()
             .create(&self.name)
             .map_err(|e| TransportError::BindFailed(e.to_string()))?;
-        
+
         let current_server = std::mem::replace(&mut self.server, next_server);
-        
-        Ok(NamedPipeTransport::from_server(current_server, self.name.clone()))
+
+        Ok(NamedPipeTransport::from_server(
+            current_server,
+            self.name.clone(),
+        ))
     }
 
     pub fn name(&self) -> &str {
@@ -192,21 +201,21 @@ mod tests {
     #[tokio::test]
     async fn test_named_pipe_communication() {
         let pipe_name = r"\\.\pipe\hexput_test";
-        
+
         // Spawn server
         let server_name = pipe_name.to_string();
         let server_handle = tokio::spawn(async move {
             let builder = NamedPipeTransport::create_server(&server_name).unwrap();
             let mut listener = builder.build().unwrap();
             let mut transport = listener.accept().await.unwrap();
-            
+
             // Receive request
             let msg = transport.recv().await.unwrap().unwrap();
-            
+
             // Send response
             let response = Message::Response(Response::success(
                 "test-id".to_string(),
-                serde_json::json!("pong")
+                serde_json::json!("pong"),
             ));
             transport.send(response).await.unwrap();
         });
@@ -216,16 +225,16 @@ mod tests {
 
         // Client
         let mut client = NamedPipeTransport::connect(pipe_name).await.unwrap();
-        
+
         let request = Message::Request(Request::new(
             "test-id".to_string(),
             "ping".to_string(),
-            vec![]
+            vec![],
         ));
-        
+
         client.send(request).await.unwrap();
         let response = client.recv().await.unwrap().unwrap();
-        
+
         match response {
             Message::Response(r) => assert_eq!(r.id, "test-id"),
             _ => panic!("Expected response"),

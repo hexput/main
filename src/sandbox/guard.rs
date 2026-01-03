@@ -21,7 +21,7 @@ impl Guard {
     pub fn check_time(&self) -> Result<(), String> {
         let elapsed = self.start_time.elapsed();
         let max_duration = Duration::from_millis(self.limits.max_execution_time_ms);
-        
+
         if elapsed > max_duration {
             Err(format!(
                 "Execution time limit exceeded: {}ms > {}ms",

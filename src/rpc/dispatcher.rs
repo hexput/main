@@ -2,9 +2,9 @@
 //!
 //! Routes incoming RPC requests to the appropriate handlers.
 
+use super::error::RpcError;
 use super::protocol::{Message, Request, Response};
 use super::registry::{FunctionRegistry, Registry};
-use super::error::RpcError;
 
 pub struct Dispatcher {
     registry: Registry,
@@ -30,7 +30,9 @@ impl Dispatcher {
             Message::Response(_) => {
                 Err(RpcError::General("Cannot dispatch a response".to_string()))
             }
-            _ => Err(RpcError::General("Unsupported message type for dispatch".to_string())),
+            _ => Err(RpcError::General(
+                "Unsupported message type for dispatch".to_string(),
+            )),
         }
     }
 
@@ -40,8 +42,13 @@ impl Dispatcher {
         let id = request.id.clone();
 
         let result = match request.object_id.as_deref() {
-            Some(object_id) => self.registry.call_method(ctx, object_id, &request.function, request.args),
-            None => self.registry.call_function(ctx, &request.function, request.args),
+            Some(object_id) => {
+                self.registry
+                    .call_method(ctx, object_id, &request.function, request.args)
+            }
+            None => self
+                .registry
+                .call_function(ctx, &request.function, request.args),
         };
 
         match result {

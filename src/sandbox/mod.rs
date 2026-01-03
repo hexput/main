@@ -1,7 +1,7 @@
 //! Sandbox: Resource limits and guards
 
-pub mod limits;
 pub mod guard;
+pub mod limits;
 
-pub use limits::Limits;
 pub use guard::Guard;
+pub use limits::Limits;

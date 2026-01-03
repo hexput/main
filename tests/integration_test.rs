@@ -1,16 +1,16 @@
+use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
 use hexput::rpc::protocol::{
-    Message, RegisterFunction, RegisterMethod, ExecutionStart, CodeRegister,
-    CachedExecutionStart, ResponseResult, RemoteFunctionResult,
+    CachedExecutionStart, CodeRegister, ExecutionStart, Message, RegisterFunction, RegisterMethod,
+    RemoteFunctionResult, ResponseResult,
 };
 use serde_json::json;
-use std::time::Duration;
-use std::sync::atomic::{AtomicU64, Ordering, AtomicBool};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Once;
+use std::time::Duration;
+use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
-use futures::{SinkExt, StreamExt, stream::SplitSink, stream::SplitStream};
-use tokio_tungstenite::{WebSocketStream, MaybeTlsStream};
-use tokio::net::TcpStream;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 const SERVER_ADDR: &str = "127.0.0.1:9099"; // Use different port than default
 const WS_URL: &str = "ws://127.0.0.1:9099";
@@ -55,14 +55,14 @@ async fn ensure_test_server_started() {
             });
         });
     });
-    
+
     // Wait for server to actually start
     let mut attempts = 0;
     while !SERVER_STARTED.load(Ordering::SeqCst) && attempts < 50 {
         tokio::time::sleep(Duration::from_millis(10)).await;
         attempts += 1;
     }
-    
+
     // Give it a bit more time to be fully ready
     tokio::time::sleep(Duration::from_millis(100)).await;
 }
@@ -83,7 +83,7 @@ async fn create_client() -> (
 ) {
     // Ensure server is running before connecting
     ensure_test_server_started().await;
-    
+
     // Retry connection a few times in case server is still starting
     let mut attempts = 0;
     loop {
@@ -111,34 +111,44 @@ async fn handle_bidirectional(
     // Send the request
     let text = serde_json::to_string(&message).unwrap();
     write.send(WsMessage::Text(text.into())).await.unwrap();
-    
+
     // Handle responses and remote function calls
     loop {
         if let Ok(Some(msg)) = timeout(TEST_TIMEOUT, read.next()).await {
             println!("DEBUG TEST: Received WS message");
             if let Ok(WsMessage::Text(text)) = msg {
-                println!("DEBUG TEST: Received text message: {}", &text[..text.len().min(100)]);
+                println!(
+                    "DEBUG TEST: Received text message: {}",
+                    &text[..text.len().min(100)]
+                );
                 if let Ok(response) = serde_json::from_str::<Message>(&text) {
                     match response {
                         // Handle remote function calls from server
                         Message::RemoteFunctionCall(call) => {
-                            println!("DEBUG TEST: Received RemoteFunctionCall for '{}'", call.function_name);
+                            println!(
+                                "DEBUG TEST: Received RemoteFunctionCall for '{}'",
+                                call.function_name
+                            );
                             if let Some(ref handler) = function_handler {
                                 let result = handler(&call.function_name, call.args);
                                 println!("DEBUG TEST: Handler returned: {:?}", result);
-                                
+
                                 // Send result back to server
-                                let result_msg = Message::RemoteFunctionResult(RemoteFunctionResult {
-                                    response_id: call.request_id,
-                                    id: call.id,
-                                    result: ResponseResult::Success { value: result },
-                                });
-                                
+                                let result_msg =
+                                    Message::RemoteFunctionResult(RemoteFunctionResult {
+                                        response_id: call.request_id,
+                                        id: call.id,
+                                        result: ResponseResult::Success { value: result },
+                                    });
+
                                 let result_text = serde_json::to_string(&result_msg).unwrap();
                                 println!("DEBUG TEST: Sending RemoteFunctionResult back to server");
-                                write.send(WsMessage::Text(result_text.into())).await.unwrap();
+                                write
+                                    .send(WsMessage::Text(result_text.into()))
+                                    .await
+                                    .unwrap();
                                 println!("DEBUG TEST: RemoteFunctionResult sent, continuing to wait for ExecutionResult");
-                                
+
                                 // Continue listening for the actual response
                                 continue;
                             } else {
@@ -184,7 +194,7 @@ async fn send_and_receive(
         match timeout(TEST_TIMEOUT, read.next()).await {
             Ok(Some(Ok(WsMessage::Text(text)))) => {
                 let msg: Message = serde_json::from_str(&text).expect("Failed to parse response");
-                
+
                 // Check if this response matches our request_id
                 let response_id = match &msg {
                     Message::Response(r) => Some(&r.response_id),
@@ -193,7 +203,7 @@ async fn send_and_receive(
                     Message::RegisterResponse(r) => Some(&r.response_id),
                     _ => None,
                 };
-                
+
                 if let Some(rid) = response_id {
                     if rid == &request_id {
                         return msg;
@@ -205,7 +215,7 @@ async fn send_and_receive(
             }
             Ok(Some(Ok(WsMessage::Binary(data)))) => {
                 let msg: Message = serde_json::from_slice(&data).expect("Failed to parse response");
-                
+
                 let response_id = match &msg {
                     Message::Response(r) => Some(&r.response_id),
                     Message::ExecutionResult(r) => Some(&r.response_id),
@@ -213,7 +223,7 @@ async fn send_and_receive(
                     Message::RegisterResponse(r) => Some(&r.response_id),
                     _ => None,
                 };
-                
+
                 if let Some(rid) = response_id {
                     if rid == &request_id {
                         return msg;
@@ -293,16 +303,14 @@ async fn test_execution_with_globals() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value, json!(300.0));
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value, json!(300.0));
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
@@ -473,10 +481,10 @@ async fn test_function_registration() {
                 ResponseResult::Error { message } => {
                     // Also acceptable if it errors
                     assert!(
-                        message.contains("not allowed") || 
-                        message.contains("Permission denied") ||
-                        message.contains("not found") || 
-                        message.contains("Function 'testFunction' not found"),
+                        message.contains("not allowed")
+                            || message.contains("Permission denied")
+                            || message.contains("not found")
+                            || message.contains("Function 'testFunction' not found"),
                         "Unexpected error: {}",
                         message
                     );
@@ -503,22 +511,20 @@ async fn test_function_registration() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Error { message } => {
-                    assert!(
-                        message.contains("not registered") || 
-                        message.contains("Permission denied") ||
-                        message.contains("Not allowed"),
-                        "Expected security error, got: {}",
-                        message
-                    );
-                }
-                ResponseResult::Success { .. } => {
-                    panic!("Should have failed - function not registered");
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Error { message } => {
+                assert!(
+                    message.contains("not registered")
+                        || message.contains("Permission denied")
+                        || message.contains("Not allowed"),
+                    "Expected security error, got: {}",
+                    message
+                );
             }
-        }
+            ResponseResult::Success { .. } => {
+                panic!("Should have failed - function not registered");
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
@@ -596,16 +602,14 @@ async fn test_control_flow() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value, json!("greater"));
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value, json!("greater"));
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 
@@ -678,16 +682,14 @@ async fn test_callbacks() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value, json!(30.0));
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value, json!(30.0));
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
@@ -723,18 +725,16 @@ async fn test_objects_and_arrays() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value["name"], "Alice");
-                    assert_eq!(value["age"], 30.0);
-                    assert_eq!(value["active"], true);
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value["name"], "Alice");
+                assert_eq!(value["age"], 30.0);
+                assert_eq!(value["active"], true);
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 
@@ -760,16 +760,14 @@ async fn test_objects_and_arrays() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value, json!(10.0));
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value, json!(10.0));
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
@@ -797,16 +795,14 @@ async fn test_error_handling() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Error { message } => {
-                    assert!(message.contains("Parse error") || message.contains("parse"));
-                }
-                ResponseResult::Success { .. } => {
-                    panic!("Should have failed - invalid syntax");
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Error { message } => {
+                assert!(message.contains("Parse error") || message.contains("parse"));
             }
-        }
+            ResponseResult::Success { .. } => {
+                panic!("Should have failed - invalid syntax");
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 
@@ -827,20 +823,18 @@ async fn test_error_handling() {
     .await;
 
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Error { message } => {
-                    assert!(
-                        message.contains("Undefined") || message.contains("not found"),
-                        "Expected undefined error, got: {}",
-                        message
-                    );
-                }
-                ResponseResult::Success { .. } => {
-                    panic!("Should have failed - undefined variable");
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Error { message } => {
+                assert!(
+                    message.contains("Undefined") || message.contains("not found"),
+                    "Expected undefined error, got: {}",
+                    message
+                );
             }
-        }
+            ResponseResult::Success { .. } => {
+                panic!("Should have failed - undefined variable");
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
@@ -887,30 +881,26 @@ async fn test_multiple_clients() {
 
     // Verify both got their correct responses
     match response1 {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value, json!(100.0));
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Client 1 execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value, json!(100.0));
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Client 1 execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 
     match response2 {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value, json!(200.0));
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Client 2 execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value, json!(200.0));
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Client 2 execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
@@ -968,7 +958,8 @@ async fn test_remote_function_calling() {
                 vl y = 20;
                 vl sum = addNumbers(x, y);
                 res sum;
-            "#.to_string(),
+            "#
+            .to_string(),
             global_variables: json!({}),
         }),
         Some(Box::new(|func_name, args| {
@@ -1057,7 +1048,8 @@ async fn test_remote_method_calling() {
                     email: "bob@example.com"
                 };
                 res user;
-            "#.to_string(),
+            "#
+            .to_string(),
             global_variables: json!({
                 "userObj": {
                     "secret_data": {
@@ -1074,17 +1066,14 @@ async fn test_remote_method_calling() {
 
     // Should succeed - just creating an object
     match response {
-        Message::ExecutionResult(result) => {
-            match result.result {
-                ResponseResult::Success { value } => {
-                    assert_eq!(value["name"], "Bob");
-                }
-                ResponseResult::Error { message } => {
-                    panic!("Execution failed: {}", message);
-                }
+        Message::ExecutionResult(result) => match result.result {
+            ResponseResult::Success { value } => {
+                assert_eq!(value["name"], "Bob");
             }
-        }
+            ResponseResult::Error { message } => {
+                panic!("Execution failed: {}", message);
+            }
+        },
         _ => panic!("Expected ExecutionResult"),
     }
 }
-

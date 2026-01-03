@@ -11,11 +11,11 @@
 //! - Remote calls
 //! - Transport protocols
 
-pub mod lexer;
-pub mod parser;
 pub mod ast;
 pub mod error;
+pub mod lexer;
+pub mod parser;
 
-pub use parser::parse;
 pub use ast::{Ast, Expression, Statement};
 pub use error::SyntaxError;
+pub use parser::parse;

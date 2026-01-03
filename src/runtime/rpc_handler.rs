@@ -3,8 +3,8 @@
 //! This allows the VM to make remote calls while maintaining
 //! synchronous semantics from the script's perspective.
 
-use super::value::Value;
 use super::error::RuntimeResult;
+use super::value::Value;
 
 /// Handler for remote function calls
 ///
@@ -21,7 +21,7 @@ pub trait RpcHandler: Send + Sync {
     /// # Returns
     /// The result value or an error
     fn call_remote(&self, function: &str, args: Vec<Value>) -> RuntimeResult<Value>;
-    
+
     /// Call a method on a remote object
     ///
     /// # Arguments
@@ -41,12 +41,20 @@ pub struct NoOpRpcHandler;
 
 impl RpcHandler for NoOpRpcHandler {
     fn call_remote(&self, function: &str, _args: Vec<Value>) -> RuntimeResult<Value> {
-        Err(super::error::RuntimeError::UndefinedFunction(function.to_string()))
-    }
-    
-    fn call_method(&self, _object: &Value, method: &str, _args: Vec<Value>) -> RuntimeResult<Value> {
-        Err(super::error::RuntimeError::General(
-            format!("Method '{}' not found (remote calls disabled)", method)
+        Err(super::error::RuntimeError::UndefinedFunction(
+            function.to_string(),
         ))
+    }
+
+    fn call_method(
+        &self,
+        _object: &Value,
+        method: &str,
+        _args: Vec<Value>,
+    ) -> RuntimeResult<Value> {
+        Err(super::error::RuntimeError::General(format!(
+            "Method '{}' not found (remote calls disabled)",
+            method
+        )))
     }
 }

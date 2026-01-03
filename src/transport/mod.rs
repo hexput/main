@@ -8,9 +8,9 @@
 //!
 //! This layer is a mechanism, not part of the language.
 
-pub mod websocket;
-pub mod message;
 pub mod error;
+pub mod message;
+pub mod websocket;
 
 #[cfg(unix)]
 pub mod unix_socket;
@@ -18,8 +18,8 @@ pub mod unix_socket;
 #[cfg(windows)]
 pub mod named_pipe;
 
-pub use message::MessageHandler;
 pub use error::TransportError;
+pub use message::MessageHandler;
 
 use crate::rpc::Message;
 use tokio::sync::mpsc;
@@ -37,14 +37,19 @@ pub enum TransportType {
 /// Unified transport interface
 pub trait Transport: Send + Sync {
     /// Send a message
-    fn send(&mut self, message: Message) -> impl std::future::Future<Output = Result<(), TransportError>> + Send;
-    
+    fn send(
+        &mut self,
+        message: Message,
+    ) -> impl std::future::Future<Output = Result<(), TransportError>> + Send;
+
     /// Receive a message
-    fn recv(&mut self) -> impl std::future::Future<Output = Result<Option<Message>, TransportError>> + Send;
-    
+    fn recv(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Option<Message>, TransportError>> + Send;
+
     /// Close the transport
     fn close(&mut self) -> impl std::future::Future<Output = Result<(), TransportError>> + Send;
-    
+
     /// Get transport type
     fn transport_type(&self) -> TransportType;
 }
@@ -62,7 +67,9 @@ impl TransportChannel {
     }
 
     pub async fn send(&self, message: Message) -> Result<(), TransportError> {
-        self.tx.send(message).await
+        self.tx
+            .send(message)
+            .await
             .map_err(|_| TransportError::ChannelClosed)
     }
 
@@ -74,4 +81,3 @@ impl TransportChannel {
         self.tx.clone()
     }
 }
-

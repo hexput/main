@@ -42,7 +42,11 @@ impl SyntaxError {
         Self::UnterminatedString(line, column)
     }
 
-    pub fn unexpected_token(expected: impl Into<String>, got: impl Into<String>, line: usize) -> Self {
+    pub fn unexpected_token(
+        expected: impl Into<String>,
+        got: impl Into<String>,
+        line: usize,
+    ) -> Self {
         Self::UnexpectedToken {
             expected: expected.into(),
             got: got.into(),

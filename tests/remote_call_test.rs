@@ -1,7 +1,7 @@
 //! Tests for remote function call execution in the VM
 
 use hexput::language::parse;
-use hexput::runtime::{execute, Context, RpcHandler, Value, RuntimeError};
+use hexput::runtime::{execute, Context, RpcHandler, RuntimeError, Value};
 use hexput::sandbox::Limits;
 use hexput::semantic::capabilities::{Capability, CapabilitySet};
 use std::sync::{Arc, Mutex};
@@ -27,11 +27,19 @@ impl MockRpcHandler {
 
 impl RpcHandler for MockRpcHandler {
     fn call_remote(&self, function: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
-        self.calls.lock().unwrap().push((function.to_string(), args));
+        self.calls
+            .lock()
+            .unwrap()
+            .push((function.to_string(), args));
         Ok(self.return_value.clone())
     }
 
-    fn call_method(&self, _object: &Value, _method: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
+    fn call_method(
+        &self,
+        _object: &Value,
+        _method: &str,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         Ok(Value::Undefined)
     }
 }
@@ -41,11 +49,22 @@ struct FailingRpcHandler;
 
 impl RpcHandler for FailingRpcHandler {
     fn call_remote(&self, function: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::RemoteCallFailed(format!("Remote function '{}' failed", function)))
+        Err(RuntimeError::RemoteCallFailed(format!(
+            "Remote function '{}' failed",
+            function
+        )))
     }
 
-    fn call_method(&self, _object: &Value, method: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::RemoteCallFailed(format!("Remote method '{}' failed", method)))
+    fn call_method(
+        &self,
+        _object: &Value,
+        method: &str,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::RemoteCallFailed(format!(
+            "Remote method '{}' failed",
+            method
+        )))
     }
 }
 
@@ -62,11 +81,7 @@ fn test_remote_call_with_capability() {
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("remoteAdd".to_string()));
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler.clone(),
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler.clone());
 
     let result = execute(&ast, &mut context).unwrap();
 
@@ -89,17 +104,12 @@ fn test_remote_call_without_capability_fails() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
     let handler = Arc::new(MockRpcHandler::new(Value::Number(30.0)));
     // No capabilities granted
     let capabilities = CapabilitySet::new();
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler,
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler);
 
     let result = execute(&ast, &mut context);
 
@@ -120,7 +130,6 @@ fn test_remote_call_without_handler_fails() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("remoteAdd".to_string()));
@@ -150,17 +159,12 @@ fn test_local_callback_takes_precedence_over_remote() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
     let handler = Arc::new(MockRpcHandler::new(Value::Number(999.0)));
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("myFunc".to_string()));
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler.clone(),
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler.clone());
 
     let result = execute(&ast, &mut context).unwrap();
 
@@ -180,17 +184,14 @@ fn test_remote_call_with_string_args_and_result() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
-    let handler = Arc::new(MockRpcHandler::new(Value::String("Hello, Alice!".to_string())));
+    let handler = Arc::new(MockRpcHandler::new(Value::String(
+        "Hello, Alice!".to_string(),
+    )));
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("remoteGreet".to_string()));
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler.clone(),
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler.clone());
 
     let result = execute(&ast, &mut context).unwrap();
 
@@ -210,17 +211,12 @@ fn test_remote_call_failure_propagates() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
     let handler = Arc::new(FailingRpcHandler);
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("failingFunc".to_string()));
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler,
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler);
 
     let result = execute(&ast, &mut context);
 
@@ -243,17 +239,12 @@ fn test_multiple_remote_calls() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
     let handler = Arc::new(MockRpcHandler::new(Value::Number(10.0)));
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("remoteAdd".to_string()));
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler.clone(),
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler.clone());
 
     let result = execute(&ast, &mut context).unwrap();
 
@@ -277,17 +268,12 @@ fn test_remote_call_with_complex_args() {
     "#;
 
     let ast = parse(source).unwrap();
-    
 
     let handler = Arc::new(MockRpcHandler::new(Value::Boolean(true)));
     let mut capabilities = CapabilitySet::new();
     capabilities.grant(Capability::CallRemote("processData".to_string()));
 
-    let mut context = Context::with_rpc_handler(
-        Limits::default(),
-        capabilities,
-        handler.clone(),
-    );
+    let mut context = Context::with_rpc_handler(Limits::default(), capabilities, handler.clone());
 
     let result = execute(&ast, &mut context).unwrap();
 
@@ -297,13 +283,13 @@ fn test_remote_call_with_complex_args() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, "processData");
     assert_eq!(calls[0].1.len(), 2);
-    
+
     // First arg should be an object
     match &calls[0].1[0] {
-        Value::Object(_) => {},
+        Value::Object(_) => {}
         _ => panic!("Expected object"),
     }
-    
+
     // Second arg should be an array
     match &calls[0].1[1] {
         Value::Array(arr) => {
