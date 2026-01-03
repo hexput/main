@@ -1,9 +1,9 @@
 //! Message handler for processing RPC requests and executing scripts
 
 use serde_json::Value as JsonValue;
-use tokio::sync::{mpsc, oneshot, RwLock};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot, RwLock};
 
 /// Type alias for pending RPC call responses
 type PendingCalls = Arc<RwLock<HashMap<String, oneshot::Sender<Result<JsonValue, String>>>>>;
@@ -28,10 +28,7 @@ pub struct ConnectionRpcHandler {
 }
 
 impl ConnectionRpcHandler {
-    pub fn new(
-        message_tx: mpsc::UnboundedSender<Message>,
-        pending_calls: PendingCalls,
-    ) -> Self {
+    pub fn new(message_tx: mpsc::UnboundedSender<Message>, pending_calls: PendingCalls) -> Self {
         Self {
             message_tx,
             pending_calls,

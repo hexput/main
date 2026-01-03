@@ -106,7 +106,7 @@ async fn handle_bidirectional(
     write: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
     read: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     message: Message,
-    function_handler: Option<Box<dyn Fn(&str, Vec<serde_json::Value>) -> serde_json::Value + Send>>,
+    function_handler: Option<FunctionHandler>,
 ) -> Message {
     // Send the request
     let text = serde_json::to_string(&message).unwrap();
@@ -237,6 +237,9 @@ async fn send_and_receive(
         }
     }
 }
+
+/// Type alias for function handler callback
+type FunctionHandler = Box<dyn Fn(&str, Vec<serde_json::Value>) -> serde_json::Value + Send>;
 
 #[tokio::test]
 async fn test_basic_execution() {

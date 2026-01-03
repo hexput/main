@@ -698,6 +698,30 @@ fn test_parse_number_literals() {
         }
         _ => panic!("Expected zero"),
     }
+
+    // Pi
+    let ast = parse("vl x = pi;").unwrap();
+    match &ast.statements[0] {
+        Statement::VarDecl {
+            value: Expression::Identifier(name),
+            ..
+        } => {
+            assert_eq!(name, "pi");
+        }
+        _ => panic!("Expected identifier for Pi"),
+    }
+
+    // Approximate Pi value
+    let ast = parse("vl x = 3.14159;").unwrap();
+    match &ast.statements[0] {
+        Statement::VarDecl {
+            value: Expression::Number(n),
+            ..
+        } => {
+            assert_eq!(*n, std::f64::consts::PI);
+        }
+        _ => panic!("Expected number literal for Pi"),
+    }
 }
 
 #[test]
