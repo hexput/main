@@ -157,7 +157,7 @@ pub struct RemoteMethodCall {
     pub request_id: String,
     pub id: String,
     pub context_id: String,
-    pub object_id: String,
+    pub object: serde_json::Value,
     pub method_name: String,
     pub args: Vec<serde_json::Value>,
 }

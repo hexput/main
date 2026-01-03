@@ -31,7 +31,7 @@ impl RpcHandler for MockRpcHandler {
         Ok(self.return_value.clone())
     }
 
-    fn call_method(&self, _object_id: &str, _method: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
+    fn call_method(&self, _object: &Value, _method: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
         Ok(Value::Undefined)
     }
 }
@@ -44,7 +44,7 @@ impl RpcHandler for FailingRpcHandler {
         Err(RuntimeError::RemoteCallFailed(format!("Remote function '{}' failed", function)))
     }
 
-    fn call_method(&self, _object_id: &str, method: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
+    fn call_method(&self, _object: &Value, method: &str, _args: Vec<Value>) -> Result<Value, RuntimeError> {
         Err(RuntimeError::RemoteCallFailed(format!("Remote method '{}' failed", method)))
     }
 }

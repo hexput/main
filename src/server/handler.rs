@@ -99,19 +99,20 @@ impl RpcHandler for ConnectionRpcHandler {
         }
     }
     
-    fn call_method(&self, object_id: &str, method: &str, args: Vec<Value>) -> crate::runtime::error::RuntimeResult<Value> {
+    fn call_method(&self, object: &Value, method: &str, args: Vec<Value>) -> crate::runtime::error::RuntimeResult<Value> {
         let request_id = self.generate_request_id();
         let id = self.generate_request_id();
         
         // Convert runtime Values to JSON
         let json_args: Vec<JsonValue> = args.iter().map(runtime_value_to_json).collect();
+        let json_object = runtime_value_to_json(object);
         
         // Create the remote method call message
         let message = Message::RemoteMethodCall(RemoteMethodCall {
             request_id: request_id.clone(),
             id,
             context_id: "default".to_string(), // Context ID from current execution
-            object_id: object_id.to_string(),
+            object: json_object,
             method_name: method.to_string(),
             args: json_args,
         });

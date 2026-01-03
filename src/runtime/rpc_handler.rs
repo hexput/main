@@ -25,13 +25,13 @@ pub trait RpcHandler: Send + Sync {
     /// Call a method on a remote object
     ///
     /// # Arguments
-    /// * `object_id` - The object's identifier (from secret_data.id)
+    /// * `object` - The full object value (MethodObject with object_id and fields)
     /// * `method` - Method name to call
     /// * `args` - Evaluated argument values
     ///
     /// # Returns
     /// The result value or an error
-    fn call_method(&self, object_id: &str, method: &str, args: Vec<Value>) -> RuntimeResult<Value>;
+    fn call_method(&self, object: &Value, method: &str, args: Vec<Value>) -> RuntimeResult<Value>;
 }
 
 /// No-op RPC handler that always fails
@@ -44,7 +44,7 @@ impl RpcHandler for NoOpRpcHandler {
         Err(super::error::RuntimeError::UndefinedFunction(function.to_string()))
     }
     
-    fn call_method(&self, _object_id: &str, method: &str, _args: Vec<Value>) -> RuntimeResult<Value> {
+    fn call_method(&self, _object: &Value, method: &str, _args: Vec<Value>) -> RuntimeResult<Value> {
         Err(super::error::RuntimeError::General(
             format!("Method '{}' not found (remote calls disabled)", method)
         ))

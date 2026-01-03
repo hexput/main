@@ -1,0 +1,198 @@
+name: Development Release
+
+on:
+  push:
+    branches: [ main, develop, dev ]
+    tags:
+      - 'v*-dev*'
+      - 'v*-alpha*'
+      - 'v*-beta*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Development version (e.g., dev-20240103)'
+        required: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Development Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            DATE=$(date +%Y%m%d)
+            COMMIT=$(git rev-parse --short HEAD)
+            VERSION="dev-${DATE}-${COMMIT}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Development version: ${VERSION}"
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: Development Release ${{ steps.version.outputs.version }}
+          body: |
+            ## Development Release ${{ steps.version.outputs.version }}
+            
+            **⚠️ This is a development/preview release and may contain bugs.**
+            
+            ### Changes
+            - Built from commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+            
+            ### Installation
+            Download the appropriate binary for your platform below.
+            
+            ### Platforms
+            - Linux (x86_64)
+            - Windows (x86_64)
+            - macOS (x86_64 & ARM64)
+            
+            ---
+            *Automated development release from CI/CD pipeline*
+          draft: false
+          prerelease: true
+
+  build-and-upload:
+    name: Build and Upload
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: hexput
+            asset_name: hexput-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: hexput.exe
+            asset_name: hexput-windows-x86_64.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: hexput
+            asset_name: hexput-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: hexput
+            asset_name: hexput-macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ matrix.target }}-release-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+      
+      - name: Strip binary (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      
+      - name: Create tarball (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          mv ${{ matrix.asset_name }}.tar.gz ../../../
+      
+      - name: Create zip (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          move ${{ matrix.asset_name }}.zip ../../../
+        shell: cmd
+      
+      - name: Upload Release Asset (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}.tar.gz
+          asset_name: ${{ matrix.asset_name }}.tar.gz
+          asset_content_type: application/gzip
+      
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}.zip
+          asset_name: ${{ matrix.asset_name }}.zip
+          asset_content_type: application/zip
+
+  publish-library:
+    name: Publish Library Artifact
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Build library
+        run: cargo build --release --lib
+      
+      - name: Create library archive
+        run: |
+          mkdir -p hexput-lib
+          cp target/release/libhexput.* hexput-lib/ || true
+          cp target/release/libhexput.a hexput-lib/ || true
+          cp target/release/libhexput.so hexput-lib/ || true
+          tar czf hexput-lib-linux-x86_64.tar.gz hexput-lib/
+      
+      - name: Upload Library Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./hexput-lib-linux-x86_64.tar.gz
+          asset_name: hexput-lib-linux-x86_64.tar.gz
+          asset_content_type: application/gzip
