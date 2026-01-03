@@ -56,7 +56,7 @@ impl NamedPipeTransport {
     }
 
     async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), std::io::Error> {
-        match self {
+        match &mut self.pipe {
             NamedPipeStream::Server(pipe) => {
                 pipe.read_exact(buf).await?;
                 Ok(())

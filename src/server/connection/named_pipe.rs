@@ -73,7 +73,7 @@ async fn handle_connection(
     // Spawn reader task
     let reader_task = tokio::spawn(async move {
         let mut buffer = vec![0u8; 10 * 1024 * 1024]; // 10MB buffer
-        let _current_context_id: Option<String> = None;
+        let mut _current_context_id: Option<String> = None;
         
         loop {
             // Read length prefix (4 bytes)
