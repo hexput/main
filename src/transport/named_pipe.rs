@@ -210,10 +210,11 @@ mod tests {
             let mut transport = listener.accept().await.unwrap();
 
             // Receive request
-            let msg = transport.recv().await.unwrap().unwrap();
+            let _msg = transport.recv().await.unwrap().unwrap();
 
             // Send response
             let response = Message::Response(Response::success(
+                "response-id".to_string(),
                 "test-id".to_string(),
                 serde_json::json!("pong"),
             ));
@@ -228,6 +229,7 @@ mod tests {
 
         let request = Message::Request(Request::new(
             "test-id".to_string(),
+            "context-id".to_string(),
             "ping".to_string(),
             vec![],
         ));
