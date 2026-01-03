@@ -712,7 +712,7 @@ fn test_parse_number_literals() {
     }
 
     // Approximate Pi value
-    let ast = parse("vl x = 3.14159;").unwrap();
+    let ast = parse("vl x = 3.141592653589793;").unwrap();
     match &ast.statements[0] {
         Statement::VarDecl {
             value: Expression::Number(n),
