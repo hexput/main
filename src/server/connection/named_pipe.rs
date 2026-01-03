@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tokio::sync::{RwLock, mpsc};
 
-use crate::rpc::protocol::{Message, RemoteFunctionResult, RemoteMethodResult, ResponseResult};
+use crate::rpc::protocol::Message;
 use crate::server::context_manager::ContextManager;
 use crate::server::handler;
 
@@ -73,7 +73,7 @@ async fn handle_connection(
     // Spawn reader task
     let reader_task = tokio::spawn(async move {
         let mut buffer = vec![0u8; 10 * 1024 * 1024]; // 10MB buffer
-        let mut current_context_id: Option<String> = None;
+        let _current_context_id: Option<String> = None;
         
         loop {
             // Read length prefix (4 bytes)
@@ -99,13 +99,13 @@ async fn handle_connection(
                 // Track context_id from messages
                 match &message {
                     Message::RegisterFunction(ref reg) => {
-                        current_context_id = Some(reg.context_id.clone());
+                        _current_context_id = Some(reg.context_id.clone());
                     }
                     Message::RegisterMethod(ref reg) => {
-                        current_context_id = Some(reg.context_id.clone());
+                        _current_context_id = Some(reg.context_id.clone());
                     }
                     Message::ExecutionStart(ref exec) => {
-                        current_context_id = Some(exec.context_id.clone());
+                        _current_context_id = Some(exec.context_id.clone());
                     }
                     _ => {}
                 };
