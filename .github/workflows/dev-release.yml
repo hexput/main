@@ -2,7 +2,7 @@ name: Development Release
 
 on:
   push:
-    branches: [ main, develop, dev ]
+    branches: [ main, develop, dev, v2 ]
     tags:
       - 'v*-dev*'
       - 'v*-alpha*'
