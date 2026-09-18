@@ -1,0 +1,20 @@
+[package]
+name = "hexput-daemon"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[dependencies]
+hexput-transport = { path = "../hexput-transport" }
+hexput-session = { path = "../hexput-session" }
+hexput-connection = { path = "../hexput-connection" }
+hexput-script = { path = "../hexput-script" }
+hexput-plugin = { path = "../hexput-plugin" }
+hexput-config = { path = "../hexput-config" }
+hexput-exec = { path = "../hexput-exec" }
+
+[lints]
+workspace = true

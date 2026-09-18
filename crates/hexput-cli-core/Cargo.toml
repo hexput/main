@@ -1,0 +1,17 @@
+[package]
+name = "hexput-cli-core"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[dependencies]
+hexput-lexer = { path = "../hexput-lexer" }
+hexput-parser = { path = "../hexput-parser" }
+hexput-interpreter = { path = "../hexput-interpreter" }
+hexput-check = { path = "../hexput-check" }
+
+[lints]
+workspace = true

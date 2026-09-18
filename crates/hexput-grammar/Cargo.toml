@@ -1,0 +1,11 @@
+[package]
+name = "hexput-grammar"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[lints]
+workspace = true

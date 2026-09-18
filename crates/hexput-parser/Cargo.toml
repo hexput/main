@@ -1,0 +1,15 @@
+[package]
+name = "hexput-parser"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[dependencies]
+hexput-lexer = { path = "../hexput-lexer" }
+hexput-ast = { path = "../hexput-ast" }
+
+[lints]
+workspace = true

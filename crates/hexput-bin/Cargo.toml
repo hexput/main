@@ -1,0 +1,26 @@
+[package]
+name = "hexput-bin"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hexput-daemon"
+path = "src/bin/hexput-daemon.rs"
+
+[[bin]]
+name = "hexput"
+path = "src/bin/hexput.rs"
+
+[[bin]]
+name = "hexput-lsp"
+path = "src/bin/hexput-lsp.rs"
+
+[dependencies]
+hexput-daemon = { path = "../hexput-daemon" }
+hexput-cli-core = { path = "../hexput-cli-core" }
+hexput-lsp-core = { path = "../hexput-lsp-core" }
+
+[lints]
+workspace = true

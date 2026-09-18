@@ -1,0 +1,17 @@
+[package]
+name = "hexput-exec"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[dependencies]
+hexput-enforce = { path = "../hexput-enforce" }
+hexput-interpreter = { path = "../hexput-interpreter" }
+hexput-rpc = { path = "../hexput-rpc" }
+hexput-globalvar = { path = "../hexput-globalvar" }
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "hexput-check"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[dependencies]
+hexput-ast = { path = "../hexput-ast" }
+hexput-shared = { path = "../hexput-shared" }
+
+[lints]
+workspace = true

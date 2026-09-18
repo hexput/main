@@ -1,0 +1,17 @@
+[package]
+name = "hexput-script"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+[dependencies]
+hexput-parser = { path = "../hexput-parser" }
+hexput-interpreter = { path = "../hexput-interpreter" }
+hexput-check = { path = "../hexput-check" }
+hexput-exec = { path = "../hexput-exec" }
+
+[lints]
+workspace = true

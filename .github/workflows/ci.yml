@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v2]
+  pull_request:
+
+# Build/test needs nothing beyond reading the repo.
+permissions:
+  contents: read
+
+# Superseded runs on the same ref are pointless; cancel them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: build / test / fmt / clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel (1.98.1) and the rustfmt/clippy
+      # components, so the toolchain used here is the one the workspace declares.
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # Every crate inherits `undocumented_unsafe_blocks = "deny"` from
+      # [workspace.lints]; the four crates NFR2 names (lexer, parser, interpreter,
+      # exec) escalate it to `forbid`. Either way an `unsafe` block without a
+      # reviewed `SAFETY:` justification fails here, making NFR2's memory-safety
+      # property mechanically enforced rather than a review convention.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # A forbidden dependency edge present only in a manifest compiles and lints
+      # clean while the crates are stubs — nothing imports it yet. This asserts the
+      # Spine's AD-enforcing edges against the resolved graph so they fail CI now,
+      # rather than surfacing later inside an unrelated change.
+      - name: Crate graph (Architecture Decisions)
+        run: python3 scripts/check-crate-graph.py
+
+      - name: Build
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Test
+        run: cargo test --workspace --locked
