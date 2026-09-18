@@ -29,7 +29,7 @@ FR-3: An already-connected Backend can update its stored Config at runtime, and 
 FR-13: Reconnecting via a Client ID requires proof of authorization, not merely knowledge of the ID; one mechanism defined once, applied uniformly across all four Transports.
 FR-24: The daemon reads a file-based System Config at startup (transport bind addresses/ports, TLS certificate paths, log level, default Session TTL) and fails to start with a clear error when it is missing or malformed; changing per-backend Config never requires touching System Config.
 
-FR-26: A Backend can have submitted scripts and Plugins statically checked before execution, in one of three modes — `off` (default), `warn`, or `error` — set in Config and overridable per execution; the check reports undeclared identifiers, arity mismatches, calls to names that are neither local functions nor Registered Functions on that Session, literal-operand type errors, unreachable code, disabled-construct usage, and Plugin-only declaration mismatches, each carrying the same category/code/span as any other error. **[Added 2026-09-18 during sprint planning, after the PRD and Spine were first marked final. Now traced in all three: PRD §4.2 FR-26 and Glossary "Static Check", Architecture Spine AD-8 plus the `check/` module in the Structural Seed, and LANGUAGE-REFERENCE.md §10.]**
+FR-26: A Backend can have submitted scripts and Plugins statically checked before execution, in one of three modes — `off` (default), `warn`, or `error` — set in Config and overridable per execution; the check reports undeclared identifiers, arity mismatches, calls to names that are neither local functions nor Registered Functions on that Session, literal-operand type errors, unreachable code, disabled-construct usage, and Plugin-only declaration mismatches, each carrying the same category/code/span as any other error. **[Added 2026-09-18 during sprint planning, after the PRD and Spine were first marked final. Now traced in all three: PRD §4.2 FR-26 and Glossary "Static Check", Architecture Spine AD-8 plus the `hexput-check` crate in the Structural Seed, and LANGUAGE-REFERENCE.md §10.]**
 
 **Script execution model (PRD §4.2)**
 
@@ -89,21 +89,21 @@ NFR7 (Operability): The daemon runs as standard infrastructure (systemd unit or 
 
 *From the Architecture Spine (AD-1…AD-7, Consistency Conventions, Stack, Structural Seed) and the PRD addendum. These are binding structural constraints on how stories are implemented, not separate features.*
 
-**Starter template:** NONE. The Architecture specifies no starter/greenfield template — Hexput v2 is a from-scratch Rust project with a prescribed module tree. Epic 1 Story 1 must therefore create `Cargo.toml` and the `src/` module skeleton from the Spine's Structural Seed rather than instantiate a template. There is no v1 code in this repository to port or reference.
+**Starter template:** NONE. The Architecture specifies no starter/greenfield template — Hexput v2 is a from-scratch Rust workspace with a prescribed crate graph. Epic 1 Story 1 must therefore create the root `Cargo.toml` and every member crate's skeleton from the Spine's Structural Seed rather than instantiate a template. There is no v1 code in this repository to port or reference.
 
-- **AD-1 (transport-agnostic core):** every Transport is an adapter implementing one internal `Port` interface; the Core module tree never imports or branches on a transport type. Health/metrics (FR-11) is served through that same `Port`, exempted from the init-handshake gate — never a fifth listener.
-- **AD-2 (Session outlives Connection):** `Session` is keyed by Client ID with a TTL from System Config; it may have zero or more concurrently attached `Connection` actors — never exactly one. Connections hold no state that outlives them, requests/responses correlate to the issuing Connection with no cross-Connection broadcast, and the FR-13 reconnect credential is validated once in `session/` — never in an adapter.
-- **AD-3 (one shared Executor):** Direct Execution, Cached Execution, and Plugin Event handlers all call one `Executor` entry point; no path reaches a Registered Function or consumes budget outside it. `async = true` handlers receive a live budget-accounting handle that stays live past dispatch return. Global Variable access is intrinsic language state — exempt from capability grants, reached only via `Executor`/`Plugin → GVStore`, never via `rpc/`. Both Plugin dispatch paths invoke the same single handler-invocation function in `exec/`.
-- **AD-4 (Global Variable store independence):** the store is a shared concurrent per-Plugin structure reachable without the Plugin actor being alive. Locking is per-`(top-level-key, partition-key)`; `keyed` partitions never contend. No Global Variable lock is held across an `.await`. `globalvar::teardown(plugin_id)` is the sole store-lifecycle entry point, called only by `session/`, synchronously, before the actor drops — never implied by `Drop`. The Plugin actor owns routing/ordering metadata only; `priority` chains run in a per-(Plugin, Event) sequencing task spawned outside the actor mailbox.
-- **AD-5 (Config surfaces are disjoint):** System Config is file-based and daemon-only; per-backend Config never touches disk. `session/` holds the single mutable live copy; `plugin/`, `script/`, and `exec/` read through it on every dispatch and never snapshot it at registration time.
+- **AD-1 (transport-agnostic core):** every Transport is an adapter implementing one internal `Port` interface; the Core crate graph never imports or branches on a transport type — only `hexput-daemon` depends on `hexput-transport`. Health/metrics (FR-11) is served through that same `Port`, exempted from the init-handshake gate — never a fifth listener.
+- **AD-2 (Session outlives Connection):** `Session` is keyed by Client ID with a TTL from System Config; it may have zero or more concurrently attached `Connection` actors — never exactly one. Connections hold no state that outlives them, requests/responses correlate to the issuing Connection with no cross-Connection broadcast, and the FR-13 reconnect credential is validated once in `hexput-session` — never in an adapter.
+- **AD-3 (one shared Executor):** Direct Execution, Cached Execution, and Plugin Event handlers all call one `Executor` entry point; no path reaches a Registered Function or consumes budget outside it. `async = true` handlers receive a live budget-accounting handle that stays live past dispatch return. Global Variable access is intrinsic language state — exempt from capability grants, reached only via `Executor`/`Plugin → GVStore`, never via `hexput-rpc` — `hexput-globalvar` does not depend on it. Both Plugin dispatch paths invoke the same single handler-invocation function in `hexput-exec`.
+- **AD-4 (Global Variable store independence):** the store is a shared concurrent per-Plugin structure reachable without the Plugin actor being alive. Locking is per-`(top-level-key, partition-key)`; `keyed` partitions never contend. No Global Variable lock is held across an `.await`. `hexput_globalvar::teardown(plugin_id)` is the sole store-lifecycle entry point, called only by `hexput-session`, synchronously, before the actor drops — never implied by `Drop`. The Plugin actor owns routing/ordering metadata only; `priority` chains run in a per-(Plugin, Event) sequencing task spawned outside the actor mailbox.
+- **AD-5 (Config surfaces are disjoint):** System Config is file-based and daemon-only; per-backend Config never touches disk — `hexput-config` and `hexput-session` are separate crates with no dependency on each other. `hexput-session` holds the single mutable live copy; `hexput-plugin`, `hexput-script`, and `hexput-exec` read through it on every dispatch and never snapshot it at registration time.
 - **AD-6 (non-blocking dispatch is structural):** every execution dispatches as an independent async task; the only permitted serialization is a Plugin's own opted-in `priority` ordering among its own handlers for one Event.
 - **AD-7 (System Config discovery):** one fixed precedence regardless of packaging — CLI flag, then environment variable, then a fixed default OS path. systemd units and Docker images set the env var or bind-mount the default path; they never change resolution logic.
 - **Locking discipline (Consistency Convention):** no lock of any kind is ever held across an `.await` point; critical sections stay short and synchronous, re-acquiring after suspension.
 - **Naming (Consistency Convention):** code identifiers match PRD §3 Glossary terms verbatim (`Session`, `Plugin`, `GlobalVariable`, `Capability`, `Client ID`, `Registered Function`, `Resource Budget`) — no synonyms.
-- **Wire format (Consistency Convention):** MessagePack via `rmp-serde`/`serde` for all Transports; Client ID and error shapes defined once in `port/` and reused by every adapter.
+- **Wire format (Consistency Convention):** MessagePack via `rmp-serde`/`serde` for all Transports; Client ID and error shapes defined once in `hexput-shared`/`hexput-port` and reused by every adapter.
 - **Logging (Consistency Convention):** structured `tracing` throughout, every entry tagged with Client ID.
-- **Module tree (Structural Seed):** `src/{transport,port,session,connection,script,check,plugin,globalvar,exec,enforce,rpc,config}/` with the responsibilities named in the Spine.
-- **AD-8 (one check pass):** `check/` is a pure entry point — parsed AST plus callable-name set plus policy in, findings out. It never executes, never reaches `rpc/` or `enforce/`, holds no state, and is invoked once per submission path: Direct Execution and `CodeRegister` in `script/`, Plugin registration in `plugin/` — never on `CachedExecutionStart`. Passing the check grants nothing; enforcement stays `enforce/`'s alone via the `Executor`.
+- **Crate graph (Structural Seed):** a Cargo workspace, one crate per module — `hexput-transport`, `hexput-port`, `hexput-session`, `hexput-connection`, `hexput-script`, `hexput-check`, `hexput-plugin`, `hexput-globalvar`, `hexput-exec`, `hexput-enforce`, `hexput-rpc`, `hexput-config`, `hexput-daemon` — plus `hexput-shared` and the language crates (`hexput-ast`, `hexput-lexer`, `hexput-parser`, `hexput-interpreter`) that sit underneath them, and `hexput-grammar`/`hexput-lsp-core` for tooling. Every crate is a `lib`; only `hexput-bin` produces binaries. A crate boundary is a compiler-enforced dependency edge, not a convention — an AD's "only X reaches Y" rule is literal: the crate that must not reach Y does not depend on it, and cannot.
+- **AD-8 (one check pass):** `hexput-check` is a pure entry point — parsed AST plus callable-name set plus policy in, findings out. It has no dependency on `hexput-interpreter`, `hexput-rpc`, or `hexput-enforce`, so it cannot execute or reach the host even by mistake. It is invoked once per submission path: Direct Execution and `CodeRegister` in `hexput-script`, Plugin registration in `hexput-plugin` — never on `CachedExecutionStart`. Passing the check grants nothing; enforcement stays `hexput-enforce`'s alone via `hexput-exec`.
 - **Pinned stack:** Rust 1.98.1 (2024 edition), tokio 1.53.1, tokio-tungstenite 0.30.0, rustls 0.23.45, serde 1.0.229, rmp-serde 1.3.1, dashmap 6.2.1, moka 0.12.16, criterion 0.8.2, tracing 0.1.44.
 - **Benchmark harness (SM-1):** a Criterion-based harness measuring steady-state Cached Execution p50/p99 and throughput against Rhai, reporting UDS and TCP/TLS separately, plus cold-parse vs. cache-hit cost. The harness ships; the comparative numbers are a thesis deliverable, not a launch gate.
 - **Deployment packaging:** systemd unit and/or Docker image; environment profiles, supervision, and upgrade/rollback are explicitly deferred by the Spine and must not be invented inside a story.
@@ -113,8 +113,8 @@ NFR7 (Operability): The daemon runs as standard infrastructure (systemd unit or 
 
 *PRD §9 left these open. Resolved here with user authority — OQ-1 decided by the user directly, OQ-2/OQ-3/OQ-11 delegated to the PM role ("solve it yourself"). These are binding on story acceptance criteria; the PRD's [ASSUMPTION] tags on FR-22/FR-23 are now settled, not assumed.*
 
-- **OQ-1 → RESOLVED (user): health and metrics are RPC message types, not an HTTP endpoint.** `HealthCheck` and `MetricsScrape` are ordinary `port/` message types served pre-init-gate (no completed handshake, no authenticated Backend required), consistent with AD-1's prohibition on a structurally separate listener. `MetricsScrape` returns a Prometheus text-exposition-format payload as its response body so standard tooling can consume it through a thin bridge; the daemon itself never opens an HTTP listener. Per-budget-dimension violation counters are separate series (FR-8, FR-11).
-- **OQ-2 → RESOLVED (PM): reconnect protection is a daemon-issued reconnect secret paired with the Client ID.** On first init the daemon generates a high-entropy (>=256-bit) secret from a CSPRNG and returns it alongside the Client ID exactly once; it persists only a salted hash of that secret in the `Session`, never the secret itself. A reconnect message carries Client ID + secret; `session/` verifies it in constant time and rejects mismatches with a defined reconnect-denied error that is indistinguishable between "unknown Client ID" and "wrong secret". The secret lives for the Session's lifetime; rotation is out of scope for v2. Validation happens once in `session/` for all four Transports (AD-2) — no adapter validates anything.
+- **OQ-1 → RESOLVED (user): health and metrics are RPC message types, not an HTTP endpoint.** `HealthCheck` and `MetricsScrape` are ordinary `hexput-port` message types served pre-init-gate (no completed handshake, no authenticated Backend required), consistent with AD-1's prohibition on a structurally separate listener. `MetricsScrape` returns a Prometheus text-exposition-format payload as its response body so standard tooling can consume it through a thin bridge; the daemon itself never opens an HTTP listener. Per-budget-dimension violation counters are separate series (FR-8, FR-11).
+- **OQ-2 → RESOLVED (PM): reconnect protection is a daemon-issued reconnect secret paired with the Client ID.** On first init the daemon generates a high-entropy (>=256-bit) secret from a CSPRNG and returns it alongside the Client ID exactly once; it persists only a salted hash of that secret in the `Session`, never the secret itself. A reconnect message carries Client ID + secret; `hexput-session` verifies it in constant time and rejects mismatches with a defined reconnect-denied error that is indistinguishable between "unknown Client ID" and "wrong secret". The secret lives for the Session's lifetime; rotation is out of scope for v2. Validation happens once in `hexput-session` for all four Transports (AD-2) — no adapter validates anything.
 - **OQ-3 → RESOLVED (PM): the execution-policy feature toggles are a fixed, closed set.** Togglable constructs (each independently on/off, all defaulting to on, settable in Config and overridable per execution per FR-3): `loops` (for/while), `conditionals` (if/else), `callbacks` (user-defined and anonymous function definition and invocation), `object_literals`, `array_literals`, and `rpc_calls` (a blanket switch disabling all Registered Function invocation regardless of Capability grants). Always-on and never togglable: variable declaration and assignment, scalar literals, arithmetic/comparison/logical operators, property and index access on existing values, `return`, and Plugin Global Variable access — disabling any of these would leave the language unable to express or report anything. Using a disabled construct raises the FR-3 "construct disabled by policy" error naming the toggle, distinct from a budget violation (FR-8) or capability denial (FR-6/FR-7).
 - **OQ-11 → RESOLVED (PM): ordering conventions confirmed as the PRD's assumed defaults.** `priority` is ascending — lower value runs first. Absent `priority`, handlers for one Event run in source-declaration order within the Plugin. `async = true` combined with `priority` resolves in favor of `async`: the handler is dispatched concurrently and its `priority` value is ignored (not rejected), since a handler that never waits its turn has no ordering position to occupy.
 - **OQ-5 → DEFERRED (user): JavaScript vs. Node.js SDK differentiation is not resolved now.** The user's call: "not much actually, we will see it while building." FR-10 Phase 1 therefore proceeds as *one* JavaScript SDK targeting the Phase 1 bar; whether a separate Node.js SDK is warranted, and on what axis (transport reach vs. API shape), is settled during SDK implementation and is not a launch gate.
@@ -158,7 +158,7 @@ FR-26: Epic 1 (the check pass itself) and Epic 3 (its Config mode and per-execut
 
 ## Epic List
 
-*9 epics. The Architecture Spine is final and its module boundaries are fixed, so epics are few and large, split only at genuine risk boundaries. Epics that would otherwise churn the same files are consolidated: `transport/`+`port/`+`session/` into Epic 5, `plugin/`+`globalvar/` into Epic 6. Dependencies flow strictly forward — no epic requires a later epic to function.*
+*9 epics. The Architecture Spine is final and its crate boundaries are fixed, so epics are few and large, split only at genuine risk boundaries — an epic groups stories by user value, not 1:1 by crate, so most epics touch several crates in one coherent slice. Epics that would otherwise churn the same crates are consolidated: `hexput-transport`+`hexput-port`+`hexput-session` into Epic 5, `hexput-plugin`+`hexput-globalvar` into Epic 6. Dependencies flow strictly forward — no epic requires a later epic to function.*
 
 ### Epic 1: Hexput language core
 
@@ -214,25 +214,41 @@ A script author can write Hexput source and see it evaluated correctly — varia
 
 *Normative definition: [LANGUAGE-REFERENCE.md](language/LANGUAGE-REFERENCE.md). Every story below implements that document — where a story and the reference disagree, the reference wins. Its `[DECISION]` markers are the choices made during the readiness gate that no earlier planning artifact recorded; confirm them before Story 1.2 starts.*
 
+*Crate landing (Story 1.1 creates all of them empty): AST types → `hexput-ast` (1.3-1.5); lexer → `hexput-lexer` (1.2); parser → `hexput-parser` (1.3-1.5); evaluator → `hexput-interpreter` (1.6-1.7); diagnostics shape → `hexput-shared::diagnostics` (1.8); check pass → `hexput-check` (1.10); CLI → `hexput-cli-core` + the `hexput` binary in `hexput-bin` (1.9-1.10). `hexput-check` depends only on `hexput-ast` — it is built here but never executes, by construction (AD-8).*
+
 ### Story 1.1: Project scaffold and pinned toolchain
 
 As a Hexput contributor,
-I want a buildable Rust workspace with the Architecture Spine's module tree and pinned dependency versions in place,
-So that every later story lands in its architecturally correct module instead of inventing a layout.
+I want a buildable Cargo workspace with the Architecture Spine's full crate graph and pinned dependency versions in place,
+So that every later story lands in its architecturally correct crate instead of inventing a layout, and a dependency an Architecture Decision forbids is a compile error rather than something a reviewer has to catch.
 
 **Acceptance Criteria:**
 
 **Given** a clone of the repository at the v2 branch with no `Cargo.toml`
-**When** I run `cargo build` and `cargo test`
-**Then** both succeed on Rust 1.98.1 with edition 2024
-**And** `src/` contains the modules `transport`, `port`, `session`, `connection`, `script`, `check`, `plugin`, `globalvar`, `exec`, `enforce`, `rpc`, and `config`, each compiling as a declared module even where still empty
-**And** `Cargo.toml` pins tokio 1.53.1, tokio-tungstenite 0.30.0, rustls 0.23.45, serde 1.0.229, rmp-serde 1.3.1, dashmap 6.2.1, moka 0.12.16, criterion 0.8.2, and tracing 0.1.44 at the Spine's versions
-**And** `rustfmt` and `clippy` run clean in CI with warnings denied
-**And** CI fails on any `unsafe` block introduced under the parser, interpreter, or `exec/` paths unless it carries a reviewed `SAFETY:` justification, so the memory-safety property NFR2 depends on is enforced mechanically rather than by reviewer memory (NFR2)
+**When** I run `cargo build` and `cargo test` at the workspace root
+**Then** both succeed on Rust 1.98.1 with edition 2024, and every member crate listed in the Spine's Structural Seed exists: `hexput-shared`, `hexput-ast`, `hexput-lexer`, `hexput-parser`, `hexput-interpreter`, `hexput-check`, `hexput-cli-core`, `hexput-transport`, `hexput-port`, `hexput-session`, `hexput-connection`, `hexput-script`, `hexput-plugin`, `hexput-globalvar`, `hexput-exec`, `hexput-enforce`, `hexput-rpc`, `hexput-config`, `hexput-daemon`, `hexput-grammar`, `hexput-lsp-core`, and `hexput-bin`
 
-**Given** the module tree exists
-**When** a reviewer inspects any module's doc comment
-**Then** it states that module's responsibility in the Spine's own words and names the ADs binding it
+**Given** the workspace's `Cargo.toml`
+**When** it is inspected
+**Then** `[workspace.dependencies]` pins tokio 1.53.1, tokio-tungstenite 0.30.0, rustls 0.23.45, serde 1.0.229, rmp-serde 1.3.1, dashmap 6.2.1, moka 0.12.16, criterion 0.8.2, and tracing 0.1.44 exactly once, and every member crate that uses one of them inherits it with `workspace = true` rather than re-pinning a version
+
+**Given** every crate but `hexput-bin`
+**When** its `Cargo.toml` is inspected
+**Then** it declares `[lib]` and no `[[bin]]` target — `hexput-bin` is the only crate in the workspace producing a binary, and it does so only via `src/bin/hexput-daemon.rs`, `src/bin/hexput.rs`, and `src/bin/hexput-lsp.rs`, each a thin `main()` that parses arguments and calls into `hexput-daemon`, `hexput-cli-core`, or `hexput-lsp-core` respectively, with no other logic in `hexput-bin`
+
+**Given** the crate dependency graph the Spine defines
+**When** each crate's `Cargo.toml` `[dependencies]` is inspected
+**Then** it matches the Spine's graph exactly for the five AD-enforcing edges: `hexput-enforce` is a dependency of `hexput-exec` and of no other crate; `hexput-globalvar` depends on neither `hexput-plugin` nor `hexput-rpc`; `hexput-check` depends on `hexput-ast` but not `hexput-interpreter`, `hexput-rpc`, or `hexput-enforce`; `hexput-session` and `hexput-config` do not depend on each other; and only `hexput-daemon` depends on `hexput-transport` (AD-1, AD-3, AD-4, AD-5, AD-8)
+**And** attempting to add any of those forbidden edges fails `cargo build` with an unresolved-import error, not merely a lint — the boundary is structural, not advisory
+
+**Given** the workspace
+**When** CI runs
+**Then** `rustfmt` and `clippy` run clean with warnings denied across every member crate
+**And** CI fails on any `unsafe` block introduced in `hexput-lexer`, `hexput-parser`, `hexput-interpreter`, or `hexput-exec` unless it carries a reviewed `SAFETY:` justification, so the memory-safety property NFR2 depends on is enforced mechanically rather than by reviewer memory (NFR2)
+
+**Given** every crate in the workspace
+**When** a reviewer inspects its `lib.rs` doc comment
+**Then** it states that crate's responsibility in the Spine's own words and names the ADs binding it
 
 ### Story 1.2: Tokenize Hexput source
 
@@ -446,7 +462,7 @@ So that a typo'd variable or a wrong argument count is caught at the moment I su
 
 **Given** the check pass's entry point
 **When** a reviewer inspects it
-**Then** it is a single pure function taking a parsed AST, a callable-name set, and the active policy, returning findings — it never executes the script, never reaches `rpc/` or `enforce/`, and holds no state between calls (AD-8)
+**Then** it is a single pure function taking a parsed AST, a callable-name set, and the active policy, returning findings — it never executes the script, `hexput-check` has no dependency on `hexput-rpc` or `hexput-enforce` so it cannot reach them, and it holds no state between calls (AD-8)
 
 **Given** a script with no findings, and one whose findings are all warnings
 **When** the pass completes
@@ -494,7 +510,7 @@ So that my client can multiplex calls on a single connection without ambiguity a
 
 **Acceptance Criteria:**
 
-**Given** the `port/` envelope definition
+**Given** the `hexput-port` envelope definition
 **When** a request is encoded and decoded
 **Then** it round-trips through MessagePack with its correlation id, message type, and payload intact (rmp-serde/serde)
 
@@ -508,7 +524,7 @@ So that my client can multiplex calls on a single connection without ambiguity a
 
 **Given** the envelope, Client ID representation, and error shapes
 **When** any transport adapter is added later
-**Then** it reuses these definitions from `port/` rather than declaring its own (AD-1, Consistency Conventions)
+**Then** it reuses these definitions from `hexput-shared`/`hexput-port` rather than declaring its own (AD-1, Consistency Conventions)
 
 ### Story 2.3: Accept connections over a Unix Domain Socket
 
@@ -552,7 +568,7 @@ So that I never have to place a configuration file anywhere for the daemon to re
 
 **Given** a stored per-backend Config
 **When** it is inspected at runtime
-**Then** it lives only in `session/` as a single live copy, is never written to disk, and no other module holds a snapshot of it (AD-5)
+**Then** it lives only in `hexput-session` as a single live copy, is never written to disk, and no other crate holds a snapshot of it (AD-5)
 
 ### Story 2.5: Attach connections to a session that outlives them
 
@@ -691,7 +707,7 @@ So that I don't pay a per-call round trip for functions that are safe by definit
 
 **Given** a blanket-allowed function
 **When** the call is enforced
-**Then** the grant is checked inside `enforce/` via the shared `Executor`, not at the transport or registry layer (AD-3)
+**Then** the grant is checked inside `hexput-enforce` via the shared `Executor`, not at the transport or registry layer (AD-3)
 
 **Given** two Sessions where only one granted a given function
 **When** a script on the other Session calls that name
@@ -752,7 +768,7 @@ So that one pathological script cannot degrade the daemon for everyone else.
 
 **Given** budget enforcement
 **When** a reviewer traces where it happens
-**Then** it lives in `enforce/`, reached only through the shared `Executor`, with no second implementation on any execution path (AD-3)
+**Then** it lives in `hexput-enforce`, reached only through the shared `Executor` — no other crate depends on `hexput-enforce`, so no second implementation can exist on any execution path (AD-3)
 
 ### Story 3.6: Bound allocations, RPC calls, output size, and side effects
 
@@ -816,11 +832,11 @@ So that I can change policy without dropping and re-establishing my Session.
 
 **Given** a Session with several Connections attached
 **When** one of them updates the Config
-**Then** every attached Connection's subsequent executions see the update, because `session/` holds the single live copy (AD-2, AD-5)
+**Then** every attached Connection's subsequent executions see the update, because `hexput-session` holds the single live copy (AD-2, AD-5)
 
-**Given** modules that consume Config
-**When** a reviewer inspects `script/`, `plugin/`, and `exec/`
-**Then** each reads through the `session/` copy on every dispatch and none caches or snapshots it at registration time (AD-5)
+**Given** the crates that consume Config
+**When** a reviewer inspects `hexput-script`, `hexput-plugin`, and `hexput-exec`
+**Then** each reads through the `hexput-session` copy on every dispatch and none caches or snapshots it at registration time (AD-5)
 
 ### Story 3.9: Switch off language constructs by policy
 
@@ -884,7 +900,7 @@ So that I can reject broken user-authored logic at submission time in developmen
 
 **Given** the check's outcome
 **When** a script passes it
-**Then** nothing about that pass grants a capability or reduces a budget charge — enforcement remains `enforce/`'s alone through the `Executor` (AD-3, AD-8)
+**Then** nothing about that pass grants a capability or reduces a budget charge — enforcement remains `hexput-enforce`'s alone through the `Executor`, unreachable from `hexput-check` (AD-3, AD-8)
 
 ---
 
@@ -1078,9 +1094,9 @@ So that my choice of transport is a latency and topology decision, never a seman
 **When** it is run against UDS, Named Pipe, TCP+TLS, and WebSocket
 **Then** every case produces identical results and identical error codes on every transport, modulo latency (FR-9)
 
-**Given** the core module tree
-**When** a reviewer greps it for transport names or transport-specific branching
-**Then** there are no matches outside `transport/` (AD-1)
+**Given** the core crate graph
+**When** a reviewer greps every crate but `hexput-transport` for transport names or transport-specific branching
+**Then** there are no matches, and no crate but `hexput-daemon` even depends on `hexput-transport` (AD-1)
 
 **Given** a new transport adapter added in future
 **When** it implements the `Port` interface
@@ -1124,7 +1140,7 @@ So that my registrations and policy survive the interruption without being re-se
 
 **Given** the reconnect credential
 **When** it is validated
-**Then** validation happens once in `session/` using a constant-time comparison, and no transport adapter performs any validation of its own (AD-2)
+**Then** validation happens once in `hexput-session` using a constant-time comparison, and no transport adapter performs any validation of its own (AD-2)
 
 **Given** a reconnect message that also carries Config
 **When** it is processed
@@ -1303,7 +1319,7 @@ So that my application's happenings drive user-authored logic.
 
 **Given** a handler invocation
 **When** it runs
-**Then** it passes through the same single handler-invocation function in `exec/`, carrying the same Capability checks and Resource Budget accounting as Direct and Cached Execution (FR-19, AD-3)
+**Then** it passes through the same single handler-invocation function in `hexput-exec`, carrying the same Capability checks and Resource Budget accounting as Direct and Cached Execution (FR-19, AD-3)
 
 **Given** a declared Event fired against a Plugin with no handler bound to it
 **When** it is processed
@@ -1363,7 +1379,7 @@ So that concurrent handlers touching different keys don't wait on each other.
 
 **Given** a handler reading or writing a Global Variable
 **When** capability rules are applied
-**Then** the access is treated as intrinsic language state exempt from the FR-6/FR-7 capability-grant requirement, reached only via the `Executor`/store path and never through `rpc/` (AD-3, Epic 3 Story 3.4)
+**Then** the access is treated as intrinsic language state exempt from the FR-6/FR-7 capability-grant requirement, reached only via the `Executor`/store path and never through `hexput-rpc` — `hexput-globalvar` has no dependency on it (AD-3, Epic 3 Story 3.4)
 
 ### Story 6.8: Choose the locking strategy
 
@@ -1499,7 +1515,7 @@ So that a network blip doesn't reset my users' plugin state and a dead session d
 
 **Given** a Session torn down by TTL expiry
 **When** teardown runs
-**Then** `session/` calls `globalvar::teardown(plugin_id)` synchronously before the Plugin actor is dropped, and teardown is never triggered by `Drop` (AD-4, FR-21)
+**Then** `hexput-session` calls `hexput_globalvar::teardown(plugin_id)` synchronously before the Plugin actor is dropped, and teardown is never triggered by `Drop` (AD-4, FR-21)
 
 **Given** an explicit unregister message for a Plugin
 **When** it is processed

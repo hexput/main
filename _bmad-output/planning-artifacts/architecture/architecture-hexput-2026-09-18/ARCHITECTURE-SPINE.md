@@ -8,7 +8,7 @@ scope: 'Hexput v2 daemon — the whole system covered by the v2 PRD'
 status: final
 created: '2026-09-18'
 updated: '2026-09-18'
-amended: '2026-09-18 — AD-8 and the check/ module added for FR-26 (optional static check), after this spine was first marked final. See .memlog.md.'
+amended: '2026-09-18 — AD-8 and the check/ module added for FR-26 (optional static check); later the same day, Structural Seed rewritten from a single-crate module tree into a Cargo workspace, one crate per module plus language/tooling crates, all lib crates funneling into one hexput-bin crate for binaries. Both after this spine was first marked final. See .memlog.md.'
 binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-11, FR-12, FR-13, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26]
 sources: ['_bmad-output/planning-artifacts/prds/prd-hexput-2026-09-18/prd.md', '_bmad-output/planning-artifacts/briefs/brief-hexput-2026-09-18/brief.md']
 companions: []
@@ -63,25 +63,25 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 
 - **Binds:** FR-9, FR-11, all Transports
 - **Prevents:** transport-specific behavior leaking into session/execution semantics; adapters and core drifting on per-transport protocol behavior; health/metrics (FR-11) becoming a fifth, structurally separate listener
-- **Rule:** every Transport is an adapter implementing one internal `Port` interface; the Core module tree never imports or branches on a specific transport type. Health/metrics (FR-11) is served through that same `Port`, exempted from the init-handshake gate (FR-1) rather than given its own listener.
+- **Rule:** every Transport is an adapter implementing one internal `Port` interface; the Core crate graph never imports or branches on a specific transport type — enforced by which crates list `hexput-transport` as a dependency (only `hexput-daemon` does). Health/metrics (FR-11) is served through that same `Port`, exempted from the init-handshake gate (FR-1) rather than given its own listener.
 
 ### AD-2 — Session outlives Connection, and may have several at once [ADOPTED]
 
 - **Binds:** FR-1, FR-2, FR-3, FR-13, FR-21, FR-24
 - **Prevents:** Plugin/Config/Registered-Function state being coupled to a single live socket, breaking reconnect (FR-2) and Plugin persistence (FR-21); a Session's connection cardinality being read differently by independently-built units
-- **Rule:** `Session` is a distinct, owned entity keyed by Client ID, with a TTL sourced from System Config (AD-5). A Session may have zero or more concurrently attached `Connection` actors (FR-2) — never exactly one. Each `Connection` is attached to at most one `Session` at a time and holds no state that outlives it. Requests and their responses correlate to the specific `Connection` that issued them; there is no cross-Connection broadcast of results — Connections are isolated from each other even when they share a Session. The Session's TTL clock (FR-21, FR-24) only starts once the last attached Connection drops; while at least one Connection is attached, the Session is actively alive with no TTL countdown running. Session-owned state (Plugins, Config, Global Variables) is shared and consistent across every attached Connection. The reconnect credential (FR-13) is validated once, in `session/`, before a reconnect request is accepted — every Transport adapter forwards the credential unchanged through the Port; no adapter performs its own validation.
+- **Rule:** `Session` is a distinct, owned entity keyed by Client ID, with a TTL sourced from System Config (AD-5). A Session may have zero or more concurrently attached `Connection` actors (FR-2) — never exactly one. Each `Connection` is attached to at most one `Session` at a time and holds no state that outlives it. Requests and their responses correlate to the specific `Connection` that issued them; there is no cross-Connection broadcast of results — Connections are isolated from each other even when they share a Session. The Session's TTL clock (FR-21, FR-24) only starts once the last attached Connection drops; while at least one Connection is attached, the Session is actively alive with no TTL countdown running. Session-owned state (Plugins, Config, Global Variables) is shared and consistent across every attached Connection. The reconnect credential (FR-13) is validated once, in `hexput-session`, before a reconnect request is accepted — every Transport adapter forwards the credential unchanged through the Port; no adapter performs its own validation, and no transport crate depends on `hexput-session` in a way that would let it try.
 
 ### AD-3 — One shared Executor enforces Capability + Resource Budget for every execution path, for its full duration [ADOPTED]
 
 - **Binds:** FR-6, FR-7, FR-8, FR-19, FR-25
 - **Prevents:** Direct Execution, Cached Execution, and Plugin Event handlers implementing capability/budget checks independently and drifting apart; async handler work (AD-6) silently escaping budget accounting once dispatch returns
-- **Rule:** all three execution paths call into one `Executor` entry point; no path may reach a Registered Function or consume Resource Budget outside it. For any execution that continues past its dispatching call's return — every `async = true` Plugin handler (AD-6) — `Executor` hands the spawned task a live budget-accounting handle, not a closed one; every budget-relevant operation that task performs afterward, including Global Variable writes counted as side effects (AD-4), charges through that same handle. `globalvar/` never opens a second, independent path into `enforce/`. Global Variable access itself is intrinsic language state, not a Registered Function — exempt from FR-6/FR-7's capability-grant requirement, reached only through the direct `Executor`/`Plugin → GVStore` path (never through `rpc/`). Both of Plugin's dispatch paths (the priority sequencing task and directly-spawned `async` handlers, AD-4) invoke the same single handler-invocation function in `exec/` — capability checks, budget-handle setup, and Global Variable access all happen in that one shared function; the two paths differ only in *when* they're scheduled, never in *what* runs.
+- **Rule:** all three execution paths call into one `Executor` entry point; no path may reach a Registered Function or consume Resource Budget outside it. For any execution that continues past its dispatching call's return — every `async = true` Plugin handler (AD-6) — `Executor` hands the spawned task a live budget-accounting handle, not a closed one; every budget-relevant operation that task performs afterward, including Global Variable writes counted as side effects (AD-4), charges through that same handle. `hexput-globalvar` has no dependency on `hexput-enforce` or `hexput-rpc` at all — a second path into either is not merely discouraged, it does not compile. Global Variable access itself is intrinsic language state, not a Registered Function — exempt from FR-6/FR-7's capability-grant requirement, reached only through the direct `Executor`/`Plugin → GVStore` path (never through `rpc/`). Both of Plugin's dispatch paths (the priority sequencing task and directly-spawned `async` handlers, AD-4) invoke the same single handler-invocation function in `exec/` — capability checks, budget-handle setup, and Global Variable access all happen in that one shared function; the two paths differ only in *when* they're scheduled, never in *what* runs.
 
 ### AD-4 — Global Variable store is independent of the Plugin actor's mailbox [ADOPTED]
 
 - **Binds:** FR-20, FR-22, FR-23, FR-25
 - **Prevents:** `async` handlers (FR-23) being forced through a serialized mailbox (breaking their bypass-ordering requirement); `priority`-ordered handlers (FR-22) losing sequencing, or accidentally serializing *different* Events on the same Plugin; the store leaking on teardown; `keyed` variables (FR-25) serializing unrelated partitions
-- **Rule:** a Plugin's Global Variables live in a shared concurrent per-Plugin store, independent of and reachable without the Plugin actor being alive. Locking is per-`(top-level-key, partition-key)` — for a non-`keyed` variable, partition-key is a constant, collapsing to plain per-top-level-key locking; for a `keyed` variable (FR-25), different Backend-supplied keys never contend for the same lock. A Global Variable's lock is never held across an `.await` point (e.g. a handler's mid-execution RPC call) — every read/write is a short, synchronous critical section against the store; a handler that needs the value across an await re-acquires it. The Backend-configurable "unsafe/lock-free" strategy (FR-20) is implemented entirely in safe Rust — no `unsafe` blocks — by using the store's finer-grained/optimistic access instead of the default per-key critical section; it trades logical race-safety (permits lost updates, stale reads) for latency, and is unrelated to the Security NFR's "no unsafe Rust in the parser/VM path" rule, which is about memory safety, not this concurrency-semantics choice. `globalvar/` exposes `teardown(plugin_id)` as its sole store-lifecycle entry point; `session/`'s TTL-expiry and explicit-unregister paths (AD-2, FR-21) are its only callers, invoked synchronously before the Plugin actor is dropped — teardown is never implied by actor `Drop`. The Plugin actor owns event routing and ordering *metadata* only (which handler runs at which priority) — it does not itself execute the ordered chain: `priority`-ordered dispatch for one Event is a per-(Plugin, Event) sequencing task spawned independently of the actor's mailbox, so an in-progress priority chain for one Event never blocks a different Event arriving concurrently for the same Plugin. Both that sequencing task and directly-spawned `async` handlers read/write the same Global Variable store.
+- **Rule:** a Plugin's Global Variables live in a shared concurrent per-Plugin store, independent of and reachable without the Plugin actor being alive. Locking is per-`(top-level-key, partition-key)` — for a non-`keyed` variable, partition-key is a constant, collapsing to plain per-top-level-key locking; for a `keyed` variable (FR-25), different Backend-supplied keys never contend for the same lock. A Global Variable's lock is never held across an `.await` point (e.g. a handler's mid-execution RPC call) — every read/write is a short, synchronous critical section against the store; a handler that needs the value across an await re-acquires it. The Backend-configurable "unsafe/lock-free" strategy (FR-20) is implemented entirely in safe Rust — no `unsafe` blocks — by using the store's finer-grained/optimistic access instead of the default per-key critical section; it trades logical race-safety (permits lost updates, stale reads) for latency, and is unrelated to the Security NFR's "no unsafe Rust in the parser/VM path" rule, which is about memory safety, not this concurrency-semantics choice. `hexput-globalvar` exposes `teardown(plugin_id)` as its sole store-lifecycle entry point; `hexput-session`'s TTL-expiry and explicit-unregister paths (AD-2, FR-21) are its only callers, invoked synchronously before the Plugin actor is dropped — teardown is never implied by actor `Drop`. The Plugin actor owns event routing and ordering *metadata* only (which handler runs at which priority) — it does not itself execute the ordered chain: `priority`-ordered dispatch for one Event is a per-(Plugin, Event) sequencing task spawned independently of the actor's mailbox, so an in-progress priority chain for one Event never blocks a different Event arriving concurrently for the same Plugin. Both that sequencing task and directly-spawned `async` handlers read/write the same Global Variable store.
 
 ### AD-5 — Per-backend Config and System Config are separate, non-overlapping surfaces [ADOPTED]
 
@@ -133,21 +133,123 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 
 ## Structural Seed
 
+**[Amended 2026-09-18, post-final, per user direction: "her modülü kendi crate'ine ayıralım... shared crate'in iç modül yapısı da olabildiğince parçalı olmalı... bütün crateler lib olmalı, binarylerin çıkacağı bin diye ayrı bir crate olmalı."]** What was one crate with an internal module tree is now a Cargo workspace: one crate per Structural Seed module, plus crates for the language (never named as a module above because it sits underneath `script/`, `check/`, and `plugin/` rather than being one itself) and for developer tooling. This is not cosmetic — a crate boundary is a dependency edge Cargo enforces at compile time, where a module boundary was only convention. Several ADs below (AD-1, AD-3, AD-4, AD-5, AD-8) state a rule of the shape "only X may reach Y directly" — under the module tree that rule lived in code review; under the crate graph, the crate that must not reach Y simply does not list it as a dependency, and doing so anyway is a compile error, not a review finding.
+
+**Every crate is a `lib` crate.** Exactly one crate in the workspace, `hexput-bin`, is allowed to produce a binary; every other crate — including `hexput-daemon` — exposes a `run()`-shaped entry point and nothing calls `std::process::exit` or owns a `fn main()`. `hexput-bin` itself stays systematically thin: one file per binary under `src/bin/`, each doing nothing but argument parsing hand-off and a call into the one library crate that actually implements that binary. No logic lives in `hexput-bin` that isn't about being an operating-system entry point.
+
 ```text
-src/
-  transport/         # adapters: uds.rs, named_pipe.rs, tcp_tls.rs, websocket.rs — one Port impl each
-  port/               # internal RPC port: wire envelope (MessagePack), request/response + event correlation
-  session/            # Client ID -> Session, TTL (from System Config), reconnect + FR-13 protection
-  connection/         # transient per-connection actor, attached to a Session
-  script/             # Direct/Cached Execution: AST cache (moka), parse/interpret entry points
-  check/              # optional static check over a parsed AST (FR-26) — one pass, no execution, no host access
-  plugin/             # Plugin actor: registration, event routing, priority/async dispatch (AD-4)
-  globalvar/          # Global Variable store: per-Plugin concurrent map (dashmap), locking + behavior strategies
-  exec/                # the one shared Executor all three modes funnel through (AD-3)
-  enforce/             # Capability checks + Resource Budget enforcement — single implementation
-  rpc/                 # host-function registry, capability grants, outbound RPC dispatch to Backend
-  config/              # System Config (file) parsing — separate from in-protocol per-backend Config
+Cargo.toml                    # [workspace], members below, pinned deps hoisted to [workspace.dependencies]
+crates/
+  hexput-shared/               # cross-cutting types every other crate may depend on; internally split, never a grab-bag
+    src/
+      diagnostics.rs           # Category, Code, Diagnostic, Span — the one error/finding shape (§7 LANGUAGE-REFERENCE, port/ errors)
+      wire.rs                  # MessagePack envelope, correlation id, message-type enum (Consistency Conventions)
+      ids.rs                   # ClientId, SessionId, PluginId — newtypes, never bare strings/uuids past the boundary
+      budget.rs                # the six Resource Budget dimensions (FR-8) as one enum, shared by enforce/check/metrics
+      lib.rs
+
+  # — language: no execution, no I/O, no host access —
+  hexput-ast/                  # AST node types + Span — data only, no lexing/parsing/eval logic
+  hexput-lexer/                # tokenizer (Epic 1 Story 1.2) — depends on hexput-shared only
+  hexput-parser/                # parser (Stories 1.3-1.5) — depends on hexput-lexer, hexput-ast
+  hexput-interpreter/          # tree-walking evaluator (Stories 1.6-1.7) — depends on hexput-ast only, no host reach
+  hexput-check/                # static check (FR-26, AD-8) — depends on hexput-ast only; NOT hexput-interpreter, NOT hexput-rpc, NOT hexput-enforce, by construction
+  hexput-cli-core/             # eval + check command logic (Stories 1.9-1.10) — depends on lexer/parser/interpreter/check
+
+  # — daemon: one crate per Structural Seed module —
+  hexput-transport/            # adapters: uds.rs, named_pipe.rs, tcp_tls.rs, websocket.rs — one Port impl each
+  hexput-port/                  # wire envelope + request/response + event correlation, built on hexput-shared::wire
+  hexput-session/                # Client ID -> Session, TTL (from System Config), reconnect + FR-13 protection
+  hexput-connection/            # transient per-connection actor, attached to a Session
+  hexput-script/                # Direct/Cached Execution: AST cache (moka), parse/interpret entry points
+  hexput-plugin/                # Plugin actor: registration, event routing, priority/async dispatch (AD-4)
+  hexput-globalvar/              # Global Variable store: per-Plugin concurrent map (dashmap), locking + behavior strategies
+  hexput-exec/                   # the one shared Executor all three modes funnel through (AD-3) — the only crate depending on hexput-enforce
+  hexput-enforce/                # Capability checks + Resource Budget enforcement — reachable only via hexput-exec
+  hexput-rpc/                    # host-function registry, capability grants, outbound RPC dispatch to Backend
+  hexput-config/                 # System Config (file) parsing — separate crate from hexput-session's per-backend Config
+  hexput-daemon/                  # wiring root: composes every daemon crate above into one runnable `run(SystemConfig)`
+
+  # — developer tooling (FR-14, FR-15), independent of the daemon —
+  hexput-grammar/               # tree-sitter grammar
+  hexput-lsp-core/               # language server logic — depends on lexer/parser/check only, never interpreter or any daemon crate
+
+  hexput-bin/                    # the ONLY crate that produces binaries
+    src/bin/
+      hexput-daemon.rs          # thin main() -> hexput_daemon::run()
+      hexput.rs                 # thin main() -> hexput_cli_core::run() (eval + check)
+      hexput-lsp.rs              # thin main() -> hexput_lsp_core::run_server()
 ```
+
+### Crate dependency graph
+
+Direction matters more than the list — an edge only appears if the AD it enforces requires it. Nothing not listed is permitted.
+
+```mermaid
+graph TD
+  shared[hexput-shared]
+
+  ast[hexput-ast] --> shared
+  lexer[hexput-lexer] --> shared
+  parser[hexput-parser] --> lexer
+  parser --> ast
+  interp[hexput-interpreter] --> ast
+  check[hexput-check] --> ast
+  check --> shared
+  clicore[hexput-cli-core] --> lexer
+  clicore --> parser
+  clicore --> interp
+  clicore --> check
+
+  transport[hexput-transport] --> port[hexput-port]
+  port --> shared
+  session[hexput-session] --> port
+  session --> shared
+  conn[hexput-connection] --> session
+  script[hexput-script] --> parser
+  script --> interp
+  script --> check
+  script --> exec[hexput-exec]
+  plugin[hexput-plugin] --> parser
+  plugin --> globalvar[hexput-globalvar]
+  plugin --> exec
+  plugin --> check
+  globalvar --> shared
+  exec --> enforce[hexput-enforce]
+  exec --> interp
+  exec --> rpc[hexput-rpc]
+  exec --> globalvar
+  enforce --> shared
+  rpc --> port
+  config[hexput-config] --> shared
+
+  daemon[hexput-daemon] --> transport
+  daemon --> session
+  daemon --> conn
+  daemon --> script
+  daemon --> plugin
+  daemon --> config
+  daemon --> exec
+
+  grammar[hexput-grammar]
+  lspcore[hexput-lsp-core] --> lexer
+  lspcore --> parser
+  lspcore --> check
+
+  bin[hexput-bin] --> daemon
+  bin --> clicore
+  bin --> lspcore
+```
+
+What this graph makes a compile error rather than a review comment:
+
+- **AD-1:** only `hexput-daemon` depends on `hexput-transport`. `hexput-session`, `hexput-script`, and `hexput-plugin` do not — so none of them can branch on a transport type even by accident.
+- **AD-3:** `hexput-enforce` has exactly one dependent, `hexput-exec`. `hexput-rpc`, `hexput-plugin`, and `hexput-script` cannot reach it directly; a capability or budget check literally has to go through `hexput-exec`.
+- **AD-4:** `hexput-globalvar` depends on neither `hexput-plugin` (the actor) nor `hexput-rpc` — the store is reachable with the actor dead, and never reachable through RPC, because those import edges don't exist.
+- **AD-5:** `hexput-config` (System Config) and `hexput-session` (per-backend Config) are separate crates with no dependency between them — the two surfaces cannot accidentally merge into one type.
+- **AD-8:** `hexput-check` depends on `hexput-ast` alone — not `hexput-interpreter`, not `hexput-rpc`, not `hexput-enforce`. It cannot execute a script or touch the host even by mistake; the capability to do so was never compiled in.
+
+`[workspace.dependencies]` in the root `Cargo.toml` pins every version from the Stack table above exactly once; member crates inherit with `workspace = true` rather than re-pinning.
 
 ```mermaid
 erDiagram
@@ -161,17 +263,18 @@ erDiagram
 
 ## Capability → Architecture Map
 
-| Capability / Area | Lives in | Governed by |
+| Capability / Area | Lives in (crate) | Governed by |
 | --- | --- | --- |
-| Connection & Session lifecycle (FR-1, FR-2, FR-3, FR-13, FR-21, FR-24) | `session/`, `connection/`, `config/` | AD-2, AD-5 |
-| Script execution (FR-4, FR-5, FR-16) | `script/`, `exec/` | AD-3, AD-6 |
-| Static check (FR-26) | `check/`, invoked from `script/` and `plugin/` | AD-8 |
-| Capability-based RPC (FR-6, FR-7) | `rpc/`, `enforce/` | AD-3 |
-| Resource Budgeting (FR-8) | `enforce/` | AD-3 |
-| Transport layer (FR-9) | `transport/`, `port/` | AD-1 |
-| Plugin Registration & Events (FR-17…FR-23, FR-25) | `plugin/`, `globalvar/`, `exec/` | AD-3, AD-4, AD-6 |
-| Health/metrics (FR-11) | `port/` | AD-1 |
-| Structured logging (FR-12) | cross-cutting via `tracing` | Consistency Conventions |
+| Connection & Session lifecycle (FR-1, FR-2, FR-3, FR-13, FR-21, FR-24) | `hexput-session`, `hexput-connection`, `hexput-config` | AD-2, AD-5 |
+| Script execution (FR-4, FR-5, FR-16) | `hexput-script`, `hexput-exec` | AD-3, AD-6 |
+| Static check (FR-26) | `hexput-check`, invoked from `hexput-script` and `hexput-plugin` | AD-8 |
+| Capability-based RPC (FR-6, FR-7) | `hexput-rpc`, `hexput-enforce` | AD-3 |
+| Resource Budgeting (FR-8) | `hexput-enforce` | AD-3 |
+| Transport layer (FR-9) | `hexput-transport`, `hexput-port` | AD-1 |
+| Plugin Registration & Events (FR-17…FR-23, FR-25) | `hexput-plugin`, `hexput-globalvar`, `hexput-exec` | AD-3, AD-4, AD-6 |
+| Health/metrics (FR-11) | `hexput-port` | AD-1 |
+| Structured logging (FR-12) | cross-cutting via `tracing`, no dedicated crate | Consistency Conventions |
+| Hexput language (Epic 1, feeds FR-4/5/14/15/19/26) | `hexput-ast`, `hexput-lexer`, `hexput-parser`, `hexput-interpreter` | none — pre-dates any FR, consumed by the rows above |
 
 ## Deferred
 
@@ -180,7 +283,7 @@ erDiagram
 - Priority tie-breaking convention, default handler order absent `priority`, and `async`+`priority` combination precedence — already flagged as [ASSUMPTION]s in PRD OQ-11; low risk, revisit before `plugin/` ordering logic is implemented.
 - Master-slave horizontal scaling — explicitly future work (PRD §6.2, brief Scope) — no AD here; `session/` and `plugin/` ownership models above are designed to not preclude it, not to implement it.
 - OS-level sandboxing (seccomp/cgroups/namespaces) — permanently out per PRD/brief; not part of this spine's trust model.
-- Tree-sitter grammar / LSP (FR-14, FR-15) — a separate deliverable/tool, not part of the daemon's own runtime architecture; no AD here. The language server does consume `check/` (AD-8) as a library for its diagnostics, which is why that module is pure and daemon-independent.
+- Tree-sitter grammar / LSP (FR-14, FR-15) — `hexput-grammar` and `hexput-lsp-core`, separate deliverables/tools, not part of the daemon's own crate graph; no AD here. `hexput-lsp-core` depends on `hexput-check` (AD-8) as a library for its diagnostics, which is why that crate is pure and has no dependency on `hexput-daemon` or any crate that does.
 - Client SDKs (FR-10) — external, per-language libraries that speak the `port/` wire protocol; not part of the daemon's own architecture, so out of this spine entirely, not merely unmentioned.
 - Benchmark harness structure (PRD SM-1, brief addendum) — thesis-deliverable detail, not a system invariant.
 - Exact `keyed` Global Variable storage layout (e.g. nested map keyed by Backend-supplied key) — implementation detail within `globalvar/`, owned by the code once it exists.
