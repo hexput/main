@@ -4,6 +4,17 @@ This file provides guidance to AI coding agents (Claude Code and others) working
 
 **Keep this file current.** As the project moves past planning and into implementation, update the Project Status section (and anything else below that's gone stale) to reflect what's actually true — don't let this drift into a description of a project that no longer exists.
 
+## Language
+
+The maintainer (Erdem) is Turkish. **Talk to him in Turkish; write everything else in English.**
+
+- **Conversation** — Turkish. Chat replies, questions, explanations, status updates.
+- **Everything written down** — English. Code, comments, doc comments, commit messages, PR descriptions, specs, planning artifacts, CI config, and this file.
+
+The split is deliberate: the repository stays readable to any contributor or agent regardless of language, while day-to-day discussion happens in the maintainer's own. Do not "helpfully" switch a document to Turkish, and do not answer in English because the surrounding files are English.
+
+BMAD mirrors this — `_bmad/custom/config.user.toml` pins `communication_language = "Turkish"` while `document_output_language` stays `English`. Note that `_bmad/config.toml`, `_bmad/config.user.toml` and `_bmad/*/config.yaml` are installer-generated and overwritten on every install; `_bmad/custom/` is the only durable place to change this.
+
 ## Project Status
 
 _Last updated: 2026-09-18._
