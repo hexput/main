@@ -22,3 +22,15 @@ Append-only. Each entry is work identified during a build but deliberately not d
 - source_spec: `spec-1-1-project-scaffold-and-pinned-toolchain.md`
   summary: AGENTS.md / CLAUDE.md "Project Status" still says the repo is pre-implementation with no `Cargo.toml` and no build commands, which is false as of this commit.
   evidence: That section explicitly instructs: "Once code exists, replace this whole section with real status ... and add build/lint/test commands to a new section below." This story created `Cargo.toml`, 22 crates, a CI workflow, and a crate-graph guard. The now-real commands are `cargo build --workspace --locked`, `cargo test --workspace --locked`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `python3 scripts/check-crate-graph.py`. Deferred only because build routes fixes that edit agent-context files to deferred work; this should be the next thing done.
+
+- source_spec: `spec-1-2-tokenize-hexput-source.md`
+  summary: The lexer materializes the entire source as `Vec<(usize, char)>` — roughly 16 bytes per character, about 16x the source size for ASCII.
+  evidence: Chosen so arbitrary lookahead is total, but actual lookahead is bounded at 3 (`peek_at(1 + sign_width)` in `lex_number`). A `Peekable<CharIndices>` with a small buffer, or byte indexing since every lookahead target is ASCII, gets the same result. Deferred because rewriting the cursor touches every scanner and the story was already patched substantially; revisit when Epic 3 lands Resource Budget enforcement, which is also what should bound submitted script size (AD-3 puts that in `hexput-enforce`, not here).
+
+- source_spec: `spec-1-2-tokenize-hexput-source.md`
+  summary: `Code` wraps `&'static str` and no diagnostics type derives serde, but the module declares these as `hexput-port`'s error-response types over MessagePack.
+  evidence: A `&'static str` newtype has no inbound representation, so a round-tripped or Backend-supplied code cannot be deserialized, and `hexput-shared` has no serde dependency at all. Settling this before `hexput-port` exists (it is still a stub) avoids forking a parallel wire type there. Likely shape: `Cow<'static, str>` or an interned form, plus feature-gated `Serialize`/`Deserialize`.
+
+- source_spec: `spec-1-2-tokenize-hexput-source.md`
+  summary: A numeric literal that underflows, e.g. `1e-999`, silently becomes `0.0` while one that overflows is rejected.
+  evidence: LANGUAGE-REFERENCE §3 rejects infinity ("a rules engine that returns NaN has failed, not computed") but says nothing about underflow, so the lexer rejects one end of the range and not the other. Every mainstream language underflows silently, which is why this was not changed unilaterally — it is a language decision for §3, not a lexer bug. Decide whether §3 should name underflow, then make the lexer match.

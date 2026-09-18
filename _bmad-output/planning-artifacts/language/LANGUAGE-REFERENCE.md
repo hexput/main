@@ -38,9 +38,19 @@ Hexput is dynamically typed with six value types:
 | `null` | `null` | The only value of its type; not a default for anything |
 | `bool` | `true`, `false` | The only type accepted in a condition |
 | `number` | `1`, `-3`, `2.5`, `1e3` | **[DECISION]** One numeric type, IEEE-754 double. No separate integer type |
-| `string` | `"text"`, `'text'` | **[DECISION]** Escapes `\n \t \r \\ \" \' \u{...}`. No interpolation in v2 |
+| `string` | `"text"`, `'text'` | **[DECISION]** Escapes `\n \t \r \\ \" \' \u{...}`. No interpolation in v2. **[DECISION]** String literals may span lines: a raw newline inside one is ordinary content, not an error |
 | `array` | `[1, 2, 3]` | Ordered, heterogeneous, zero-indexed; trailing comma allowed |
 | `object` | `{ key: "value" }` | String keys, insertion-ordered; bare or quoted keys; trailing comma allowed. Reading an absent key yields `null` (§7) |
+
+**[DECISION] String literals are multi-line.** A raw newline between the quotes is kept verbatim in the value, so
+
+```
+let a = "merhaba
+sosis
+ben";
+```
+
+is one string containing two newlines. Consequently a string is unterminated only at end of input, never at end of line, and a string's source span may cover several lines (Story 1.8 renders multi-line spans without truncating the location). There is no line-continuation escape: a `\` immediately before a newline is an invalid escape, not a join.
 
 Functions are values (§6) but are not storable in a Global Variable. **[DECISION]** — a function closes over an environment, and persisting one across Event invocations would make Global Variable lifetime semantics (FR-25) undefinable.
 
