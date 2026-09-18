@@ -1,0 +1,23 @@
+[package]
+name = "hexput-tests"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+
+# Every crate under test is a DEV-dependency, never a normal one. That distinction is load-bearing:
+# `scripts/check-crate-graph.py` enforces the Spine's AD edges over normal dependencies only, so a
+# test crate may reach `hexput-enforce` (AD-3) or `hexput-transport` (AD-1) without weakening rules
+# that are about what production code can reach. A normal dependency here would — correctly — fail
+# the graph check.
+#
+# Add each crate to this list as it gains code worth testing. Twenty of the twenty-two crates are
+# still empty stubs.
+[dev-dependencies]
+hexput-shared = { path = "../hexput-shared" }
+hexput-lexer = { path = "../hexput-lexer" }
+
+[lints]
+workspace = true

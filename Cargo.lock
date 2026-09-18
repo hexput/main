@@ -170,6 +170,14 @@ name = "hexput-shared"
 version = "0.1.0"
 
 [[package]]
+name = "hexput-tests"
+version = "0.1.0"
+dependencies = [
+ "hexput-lexer",
+ "hexput-shared",
+]
+
+[[package]]
 name = "hexput-transport"
 version = "0.1.0"
 dependencies = [

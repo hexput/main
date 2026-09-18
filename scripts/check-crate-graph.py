@@ -51,18 +51,39 @@ SOLE_DEPENDENTS = [
 
 
 def workspace_graph() -> dict[str, set[str]]:
-    """Map each workspace crate to its workspace-internal dependencies."""
-    raw = subprocess.run(
+    """Map each workspace crate to its workspace-internal *normal* dependencies.
+
+    Dev-dependencies are excluded deliberately. Every rule here is about what production
+    code can reach — "only the Executor may reach enforcement", "only the wiring root may
+    reach a transport". A dev-dependency compiles into tests and nothing else, so it grants
+    no such reach. This is what lets `hexput-tests` test any crate in the workspace without
+    either weakening these rules or being exempted by name.
+
+    Build-dependencies are still counted: a build script runs as part of producing the crate.
+    """
+    result = subprocess.run(
         ["cargo", "metadata", "--format-version", "1", "--locked", "--no-deps"],
         capture_output=True,
         text=True,
-        check=True,
-    ).stdout
-    meta = json.loads(raw)
+        check=False,
+    )
+    if result.returncode != 0:
+        # Most often a manifest changed without regenerating Cargo.lock. Say so plainly
+        # instead of surfacing a Python traceback over cargo's own message.
+        raise SystemExit(
+            "could not read the crate graph: `cargo metadata --locked` failed.\n"
+            "If you just edited a Cargo.toml, run `cargo generate-lockfile`.\n\n"
+            f"{result.stderr.strip()}"
+        )
+    meta = json.loads(result.stdout)
 
     members = {pkg["name"] for pkg in meta["packages"]}
     return {
-        pkg["name"]: {d["name"] for d in pkg["dependencies"] if d["name"] in members}
+        pkg["name"]: {
+            d["name"]
+            for d in pkg["dependencies"]
+            if d["name"] in members and d.get("kind") != "dev"
+        }
         for pkg in meta["packages"]
     }
 
