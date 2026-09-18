@@ -8,7 +8,8 @@ scope: 'Hexput v2 daemon — the whole system covered by the v2 PRD'
 status: final
 created: '2026-09-18'
 updated: '2026-09-18'
-binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-11, FR-12, FR-13, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25]
+amended: '2026-09-18 — AD-8 and the check/ module added for FR-26 (optional static check), after this spine was first marked final. See .memlog.md.'
+binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-11, FR-12, FR-13, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26]
 sources: ['_bmad-output/planning-artifacts/prds/prd-hexput-2026-09-18/prd.md', '_bmad-output/planning-artifacts/briefs/brief-hexput-2026-09-18/brief.md']
 companions: []
 ---
@@ -100,6 +101,12 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 - **Prevents:** a systemd build and a Docker build independently inventing different config-discovery logic (different default paths, different override mechanisms) that silently diverge
 - **Rule:** `config/` resolves the System Config file's location via one fixed precedence regardless of packaging — explicit CLI flag, then environment variable, then a fixed default OS path. systemd units and Docker images both just set the environment variable or bind-mount the default path; neither changes `config/`'s resolution logic.
 
+### AD-8 — One check pass, one invocation point per submission path [ADOPTED]
+
+- **Binds:** FR-26, FR-3, FR-5, FR-6
+- **Prevents:** Direct submission, Cached registration, and Plugin registration each growing their own partial checker and disagreeing about what is a finding; the check drifting into a second, unenforced capability surface; the hot path paying for a check it already passed
+- **Rule:** `check/` exposes a single pure entry point taking a parsed AST plus the callable-name set and the active policy, and returning findings — it never executes a script, never reaches `rpc/` or `enforce/`, and holds no state between calls. It is invoked from exactly one place per submission path: `script/` on Direct Execution and on `CodeRegister` (never again on `CachedExecutionStart` — a registered script is checked once, at registration), and `plugin/` at Plugin registration. The mode (`off`/`warn`/`error`) is read from the `session/` live Config on every submission, never snapshotted (AD-5). Findings reuse the error shape defined once in `port/` (Consistency Conventions), so the daemon response, the CLI, and the language server render them identically. The check is advisory by construction: it never grants, denies, or substitutes for a capability check or a budget charge — those remain `enforce/`'s alone, reached only through the `Executor` (AD-3), and a script passing the check is not thereby authorized for anything.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -133,6 +140,7 @@ src/
   session/            # Client ID -> Session, TTL (from System Config), reconnect + FR-13 protection
   connection/         # transient per-connection actor, attached to a Session
   script/             # Direct/Cached Execution: AST cache (moka), parse/interpret entry points
+  check/              # optional static check over a parsed AST (FR-26) — one pass, no execution, no host access
   plugin/             # Plugin actor: registration, event routing, priority/async dispatch (AD-4)
   globalvar/          # Global Variable store: per-Plugin concurrent map (dashmap), locking + behavior strategies
   exec/                # the one shared Executor all three modes funnel through (AD-3)
@@ -157,6 +165,7 @@ erDiagram
 | --- | --- | --- |
 | Connection & Session lifecycle (FR-1, FR-2, FR-3, FR-13, FR-21, FR-24) | `session/`, `connection/`, `config/` | AD-2, AD-5 |
 | Script execution (FR-4, FR-5, FR-16) | `script/`, `exec/` | AD-3, AD-6 |
+| Static check (FR-26) | `check/`, invoked from `script/` and `plugin/` | AD-8 |
 | Capability-based RPC (FR-6, FR-7) | `rpc/`, `enforce/` | AD-3 |
 | Resource Budgeting (FR-8) | `enforce/` | AD-3 |
 | Transport layer (FR-9) | `transport/`, `port/` | AD-1 |
@@ -171,7 +180,7 @@ erDiagram
 - Priority tie-breaking convention, default handler order absent `priority`, and `async`+`priority` combination precedence — already flagged as [ASSUMPTION]s in PRD OQ-11; low risk, revisit before `plugin/` ordering logic is implemented.
 - Master-slave horizontal scaling — explicitly future work (PRD §6.2, brief Scope) — no AD here; `session/` and `plugin/` ownership models above are designed to not preclude it, not to implement it.
 - OS-level sandboxing (seccomp/cgroups/namespaces) — permanently out per PRD/brief; not part of this spine's trust model.
-- Tree-sitter grammar / LSP (FR-14, FR-15) — a separate deliverable/tool, not part of the daemon's own runtime architecture; no AD here.
+- Tree-sitter grammar / LSP (FR-14, FR-15) — a separate deliverable/tool, not part of the daemon's own runtime architecture; no AD here. The language server does consume `check/` (AD-8) as a library for its diagnostics, which is why that module is pure and daemon-independent.
 - Client SDKs (FR-10) — external, per-language libraries that speak the `port/` wire protocol; not part of the daemon's own architecture, so out of this spine entirely, not merely unmentioned.
 - Benchmark harness structure (PRD SM-1, brief addendum) — thesis-deliverable detail, not a system invariant.
 - Exact `keyed` Global Variable storage layout (e.g. nested map keyed by Backend-supplied key) — implementation detail within `globalvar/`, owned by the code once it exists.

@@ -15,7 +15,13 @@ Planning is complete and final:
 - [PRD](_bmad-output/planning-artifacts/prds/prd-hexput-2026-09-18/prd.md) (+ [addendum](_bmad-output/planning-artifacts/prds/prd-hexput-2026-09-18/addendum.md)) — FR-1 through FR-25, MVP scope, success metrics. FR-N ids are stable references; the PRD's `.memlog.md` in the same folder is the audit trail of every decision behind them.
 - [Architecture spine](_bmad-output/planning-artifacts/architecture/architecture-hexput-2026-09-18/ARCHITECTURE-SPINE.md) — the paradigm, module boundaries, and AD-1 through AD-7 invariants below are distilled from it. Read the full spine before implementing anything it governs; this file only orients.
 
-**Next step:** turning the PRD into epics/stories (or picking a first vertical slice) and standing up `Cargo.toml`. Once code exists, replace this whole section with real status (what's built, what's in flight, what commands actually work) and add build/lint/test commands to a new section below.
+- [Epic breakdown](_bmad-output/planning-artifacts/epics.md) — 9 epics, 74 stories, every FR-1…FR-26 covered by Given/When/Then acceptance criteria. Also records the resolutions for PRD open questions OQ-1 (health/metrics are RPC messages, no HTTP listener), OQ-2 (reconnect secret mechanism), OQ-3 (the closed set of language feature toggles), and OQ-11 (handler ordering conventions) — treat those as settled, not open.
+- [Language reference](_bmad-output/planning-artifacts/language/LANGUAGE-REFERENCE.md) — **normative definition of the Hexput language**, written during sprint planning because no earlier artifact specified it. Epic 1 implements it, Epic 9's grammar and LSP describe it, Epic 6 extends it. Where a story and this document disagree, the document wins. Its `[DECISION]` markers are approved provenance, not open questions.
+- [Sprint status](_bmad-output/implementation-artifacts/sprint-status.yaml) — the tracking file; regenerate with `bmad-sprint-planning` whenever the epics change.
+
+Two amendments landed after the PRD and spine were first marked final, both recorded in their `.memlog.md` files: **FR-26** (optional, Backend-configured static check before execution) and **AD-8** with the twelfth module, `check/`.
+
+**Next step:** implement Epic 1 Story 1.1 — `Cargo.toml` plus the `src/` module skeleton from the Spine's Structural Seed — via `bmad-build`. Once code exists, replace this whole section with real status (what's built, what's in flight, what commands actually work) and add build/lint/test commands to a new section below.
 
 ## What Hexput Is
 

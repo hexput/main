@@ -3,6 +3,7 @@ title: Hexput v2 PRD
 created: 2026-09-18
 updated: 2026-09-18
 status: final
+amended: '2026-09-18 — FR-26 (optional static check) added during sprint planning, after this document was first marked final. See .memlog.md.'
 ---
 
 # PRD: Hexput v2
@@ -46,7 +47,7 @@ v2 exists because v1 never had real users and was written before the author had 
 - **Daemon** — The standalone Hexput runtime process (systemd service or Docker container). One daemon may serve multiple independent backends concurrently.
 - **Backend** — A host application that connects to the daemon, registers functions, sends config, and submits scripts for execution.
 - **Client ID** — An identifier issued to a backend on first connection, used to reconnect and resume state after a dropped connection. It is not constrained to one concurrent connection.
-- **Config** — Per-connection settings a backend sends at registration/init time; editable at runtime and overridable per execution. Primarily execution-policy defaults: resource budget values (§4.4) and language-feature toggles (e.g. disabling loop constructs or if/else branching for a given execution). Not a static file.
+- **Config** — Per-connection settings a backend sends at registration/init time; editable at runtime and overridable per execution. Primarily execution-policy defaults: resource budget values (§4.4), language-feature toggles (e.g. disabling loop constructs or if/else branching for a given execution), and the Static Check mode (FR-26). Not a static file.
 - **Registered Function** — A host-side function a backend has explicitly made callable from scripts. Registration and call-handling are separate steps.
 - **Capability** — The explicit grant that allows a script to call a specific Registered Function, expressed via `context.allow()` at registration time or a per-call `return true` guard.
 - **Script** — User-authored Hexput code submitted for execution.
@@ -62,6 +63,7 @@ v2 exists because v1 never had real users and was written before the author had 
 - **Global Variable Locking** — The concurrency strategy for a Plugin's Global Variables: per-top-level-key locking by default (mutating one key doesn't block access to sibling keys), configurable by the Backend at registration time to an unsafe/lock-free mode, and further overridable from Plugin code itself where the Backend's config permits.
 - **Global Variable Behavior** — The lifetime/scoping strategy for a Global Variable, distinct from its locking strategy: `forever` (default — persists for the Session's lifetime), `ttl: <duration>` (value expires/resets after the duration since last write), `separate_each_trigger` (each Event invocation gets an independent, non-shared value despite being declared global), or `keyed` (independent values partitioned by a key the Backend supplies when firing the Event).
 - **Session** — The state tied to a Client ID (Config, Registered Functions, Plugins and their Global Variables) that outlives any single connection. A Session has a TTL (set in System Config); it is torn down if no reconnect happens before the TTL expires.
+- **Static Check** — An optional analysis pass run over a parsed Script or Plugin *before* execution, reporting mistakes decidable without running the code (undeclared identifiers, arity mismatches, calls to names that are neither local functions nor Registered Functions, literal-operand type errors, unreachable code, disabled-construct usage). Its mode — `off`, `warn`, `error` — is part of the per-backend Config, never mandatory.
 - **System Config** — The daemon's own file-based operational configuration (for example, `config.toml` in a system config directory) — transport bind addresses/ports, TLS certificate paths, log level, and the default Session TTL. Distinct from the per-backend Config (§Glossary), which is never file-based.
 
 ## 4. Features
@@ -115,7 +117,7 @@ The daemon reads a file-based System Config at startup (operational settings: tr
 
 ### 4.2 Script execution model
 
-**Description:** Scripts run either as a one-shot Direct Execution or as a Cached Execution registered once and re-run many times with fresh variables from the AST Cache, processed asynchronously so concurrent requests don't block each other. Realizes UJ-1, UJ-2.
+**Description:** Scripts run either as a one-shot Direct Execution or as a Cached Execution registered once and re-run many times with fresh variables from the AST Cache, processed asynchronously so concurrent requests don't block each other. A Backend may optionally have scripts statically checked before they run. Realizes UJ-1, UJ-2.
 
 **Functional Requirements:**
 
@@ -138,6 +140,21 @@ Execution requests (Direct or Cached) are processed asynchronously; a slow or lo
 **Consequences (testable):**
 - Submitting a fast execution request while a slow one is still running (same connection or a different one) returns the fast result without waiting for the slow one to finish.
 - A single Backend connection can have multiple execution requests in flight concurrently; none of them serialize behind another by default.
+
+#### FR-26: Optional static check before execution
+A Backend can have a submitted Script or Plugin analyzed before it executes, in one of three modes set in its Config (§4.1) and overridable per execution: `off` (default), `warn` (findings returned alongside a normal execution), or `error` (findings reject the submission before any statement runs). The check reports only mistakes decidable without running the code. Realizes UJ-2 — the non-engineer script author is the person a pre-execution error message helps most.
+
+**Consequences (testable):**
+- With mode `off`, no check runs and a script that would produce findings still executes — the check is never mandatory and costs nothing when unused.
+- With mode `error`, a script with an error-severity finding is rejected before any statement executes and before any Registered Function is called.
+- The check resolves callable names against that Session's Registered Functions (FR-6), so a call to an unregistered host function is reported as a finding at submission time rather than surfacing as a capability-denied error mid-execution.
+- Findings carry the same category/code/message/source-span shape as any other error, so the daemon's response, the CLI, and the LSP (FR-15) render them identically.
+- For a Cached Execution (FR-5), the check runs at registration rather than on every execution.
+- Warning-severity findings (for example, an unused local variable) never reject a script, in any mode.
+
+**Out of Scope:**
+- Type inference across bindings, or any check whose outcome depends on runtime values — this is not a type system.
+- Validating a Plugin handler's returned value against its declared shape, which stays the runtime check in FR-19.
 
 ### 4.3 Capability-based RPC
 
@@ -367,7 +384,7 @@ The three non-user boundaries in §2.2 (no OS-level sandboxing, no transactional
 ### 6.1 In scope
 - Standalone daemon (systemd/Docker), all Transports (UDS, Named Pipe, TCP+TLS, WebSocket)
 - Connection init with inline config + registration (FR-1), reconnect via Client ID with reconnect protection (FR-2, FR-13), runtime/per-execution config override incl. feature toggles (FR-3), file-based System Config for daemon operational settings (FR-24)
-- Direct Execution (FR-4) and Cached Execution with AST Cache (FR-5), processed asynchronously and non-blocking (FR-16)
+- Direct Execution (FR-4) and Cached Execution with AST Cache (FR-5), processed asynchronously and non-blocking (FR-16), with an optional Backend-configured static check before execution (FR-26)
 - Capability-based RPC: register/handling separation, `context.allow()` and per-call `return true` (FR-6, FR-7)
 - Multi-dimensional Resource Budgeting (FR-8)
 - Client SDKs, Phase 1: JavaScript and Python (FR-10)
