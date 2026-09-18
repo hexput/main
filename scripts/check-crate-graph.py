@@ -32,6 +32,15 @@ FORBIDDEN_EDGES = [
     ("hexput-config", "hexput-session", "AD-5", "per-backend Config and System Config must stay separate surfaces"),
 ]
 
+# Edges an Architecture Decision requires to exist. AD-4 names `hexput-session` as the sole
+# caller of `hexput_globalvar::teardown(plugin_id)`, which it cannot be without this edge —
+# it was absent when the graph was first derived from the module tree, making the rule
+# unimplementable. Asserted so it cannot silently disappear again.
+REQUIRED_EDGES = [
+    ("hexput-session", "hexput-globalvar", "AD-4",
+     "session is the sole caller of hexput_globalvar::teardown(plugin_id)"),
+]
+
 # crate -> the exact set of workspace crates allowed to depend on it
 SOLE_DEPENDENTS = [
     ("hexput-enforce", {"hexput-exec"}, "AD-3",
@@ -70,6 +79,14 @@ def main() -> int:
                 f"{ad}: `{crate}` must not depend on `{forbidden}` — {why}"
             )
 
+    for crate, required, ad, why in REQUIRED_EDGES:
+        if crate not in graph:
+            failures.append(f"{ad}: crate `{crate}` is missing from the workspace")
+        elif required not in graph[crate]:
+            failures.append(
+                f"{ad}: `{crate}` must depend on `{required}` — {why}"
+            )
+
     for crate, allowed, ad, why in SOLE_DEPENDENTS:
         actual = {c for c, deps in graph.items() if crate in deps}
         if actual != allowed:
@@ -96,7 +113,7 @@ def main() -> int:
         )
         return 1
 
-    checked = len(FORBIDDEN_EDGES) + len(SOLE_DEPENDENTS)
+    checked = len(FORBIDDEN_EDGES) + len(REQUIRED_EDGES) + len(SOLE_DEPENDENTS)
     print(f"Crate graph OK — {checked} Architecture Decision edges asserted.")
     return 0
 

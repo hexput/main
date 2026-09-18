@@ -160,6 +160,7 @@ dependencies = [
 name = "hexput-session"
 version = "0.1.0"
 dependencies = [
+ "hexput-globalvar",
  "hexput-port",
  "hexput-shared",
 ]

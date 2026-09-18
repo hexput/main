@@ -16,7 +16,7 @@ impl SystemConfig {
     /// Resolve the System Config file's location per AD-7's fixed precedence and parse it.
     ///
     /// Stub: always returns the default. Real CLI-flag/env-var/default-path resolution lands
-    /// with the `config/` implementation story.
+    /// with the `hexput-config` implementation story.
     pub fn resolve() -> Self {
         Self
     }

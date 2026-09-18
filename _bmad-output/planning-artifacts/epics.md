@@ -138,7 +138,7 @@ FR-9: Epic 5 - UDS, Named Pipe, TCP+TLS, WebSocket adapters with identical proto
 FR-10: Epic 8 - Phase 1 client SDKs: JavaScript and Python
 FR-11: Epic 7 - HealthCheck and MetricsScrape RPC messages, pre-init-gate, per-dimension counters
 FR-12: Epic 7 - Structured logs for connection lifecycle, capability denials, budget violations, tagged by Client ID
-FR-13: Epic 5 - Reconnect protection: daemon-issued secret validated once in session/
+FR-13: Epic 5 - Reconnect protection: daemon-issued secret validated once in `hexput-session`
 FR-14: Epic 9 - Tree-sitter grammar for the Hexput language
 FR-15: Epic 9 - Basic LSP: syntax diagnostics and completion
 FR-16: Epic 2 - Non-blocking concurrent execution; independent async task per execution

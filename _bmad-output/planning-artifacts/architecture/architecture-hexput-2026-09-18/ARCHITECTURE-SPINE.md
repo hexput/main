@@ -20,9 +20,9 @@ companions: []
 
 **Hexagonal (Ports & Adapters)** at the transport boundary, wrapping an **Actor model** runtime core.
 
-- `transport/*` — one adapter per Transport (UDS, Named Pipe, TCP+TLS, WebSocket), each implementing a single internal `Port` interface. No transport-specific behavior crosses into the core.
-- `session/`, `connection/`, `plugin/` — the actor layer: a `Session` (durable, Client-ID-keyed) owns a transient `Connection` actor and zero or more `Plugin` actors. Ownership here is lifecycle ownership, not a per-operation consistency boundary: `Session` creates and tears down `Plugin`s (AD-4's `teardown` contract), but a `Plugin` — together with its Global Variable store — is its own consistency boundary for event dispatch, since `session/` never mediates a single Event invocation.
-- `exec/`, `enforce/` — the shared execution core every actor's work funnels through; this is where Capability and Resource Budget rules apply, once, for every mode.
+- `hexput-transport` — one adapter per Transport (UDS, Named Pipe, TCP+TLS, WebSocket), each implementing a single internal `Port` interface. No transport-specific behavior crosses into the core.
+- `hexput-session`, `hexput-connection`, `hexput-plugin` — the actor layer: a `Session` (durable, Client-ID-keyed) owns a transient `Connection` actor and zero or more `Plugin` actors. Ownership here is lifecycle ownership, not a per-operation consistency boundary: `Session` creates and tears down `Plugin`s (AD-4's `teardown` contract), but a `Plugin` — together with its Global Variable store — is its own consistency boundary for event dispatch, since `hexput-session` never mediates a single Event invocation.
+- `hexput-exec`, `hexput-enforce` — the shared execution core every actor's work funnels through; this is where Capability and Resource Budget rules apply, once, for every mode.
 
 ## Invariants & Rules
 
@@ -62,7 +62,7 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 ### AD-1 — Transport-agnostic core [ADOPTED]
 
 - **Binds:** FR-9, FR-11, all Transports
-- **Prevents:** transport-specific behavior leaking into session/execution semantics; adapters and core drifting on per-transport protocol behavior; health/metrics (FR-11) becoming a fifth, structurally separate listener
+- **Prevents:** transport-specific behavior leaking into Session/execution semantics; adapters and core drifting on per-transport protocol behavior; health/metrics (FR-11) becoming a fifth, structurally separate listener
 - **Rule:** every Transport is an adapter implementing one internal `Port` interface; the Core crate graph never imports or branches on a specific transport type — enforced by which crates list `hexput-transport` as a dependency (only `hexput-daemon` does). Health/metrics (FR-11) is served through that same `Port`, exempted from the init-handshake gate (FR-1) rather than given its own listener.
 
 ### AD-2 — Session outlives Connection, and may have several at once [ADOPTED]
@@ -75,7 +75,7 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 
 - **Binds:** FR-6, FR-7, FR-8, FR-19, FR-25
 - **Prevents:** Direct Execution, Cached Execution, and Plugin Event handlers implementing capability/budget checks independently and drifting apart; async handler work (AD-6) silently escaping budget accounting once dispatch returns
-- **Rule:** all three execution paths call into one `Executor` entry point; no path may reach a Registered Function or consume Resource Budget outside it. For any execution that continues past its dispatching call's return — every `async = true` Plugin handler (AD-6) — `Executor` hands the spawned task a live budget-accounting handle, not a closed one; every budget-relevant operation that task performs afterward, including Global Variable writes counted as side effects (AD-4), charges through that same handle. `hexput-globalvar` has no dependency on `hexput-enforce` or `hexput-rpc` at all — a second path into either is not merely discouraged, it does not compile. Global Variable access itself is intrinsic language state, not a Registered Function — exempt from FR-6/FR-7's capability-grant requirement, reached only through the direct `Executor`/`Plugin → GVStore` path (never through `rpc/`). Both of Plugin's dispatch paths (the priority sequencing task and directly-spawned `async` handlers, AD-4) invoke the same single handler-invocation function in `exec/` — capability checks, budget-handle setup, and Global Variable access all happen in that one shared function; the two paths differ only in *when* they're scheduled, never in *what* runs.
+- **Rule:** all three execution paths call into one `Executor` entry point; no path may reach a Registered Function or consume Resource Budget outside it. For any execution that continues past its dispatching call's return — every `async = true` Plugin handler (AD-6) — `Executor` hands the spawned task a live budget-accounting handle, not a closed one; every budget-relevant operation that task performs afterward, including Global Variable writes counted as side effects (AD-4), charges through that same handle. `hexput-globalvar` has no dependency on `hexput-enforce` or `hexput-rpc` at all — a second path into either is not merely discouraged, it does not compile. Global Variable access itself is intrinsic language state, not a Registered Function — exempt from FR-6/FR-7's capability-grant requirement, reached only through the direct `Executor`/`Plugin → GVStore` path (never through `hexput-rpc`). Both of Plugin's dispatch paths (the priority sequencing task and directly-spawned `async` handlers, AD-4) invoke the same single handler-invocation function in `hexput-exec` — capability checks, budget-handle setup, and Global Variable access all happen in that one shared function; the two paths differ only in *when* they're scheduled, never in *what* runs.
 
 ### AD-4 — Global Variable store is independent of the Plugin actor's mailbox [ADOPTED]
 
@@ -87,7 +87,7 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 
 - **Binds:** FR-1, FR-3, FR-24
 - **Prevents:** daemon operational settings (bind addresses, TLS paths, log level, Session TTL) being conflated with backend-supplied execution policy, or either surface silently absorbing the other's responsibility; a runtime Config update (FR-3) silently not reaching already-registered Plugins
-- **Rule:** System Config (file-based) is the only source of the daemon's own operational settings. Per-backend Config never touches disk and never configures the daemon itself. `session/` holds the single mutable, live copy of a Session's per-backend Config; `plugin/`, `script/`, and `exec/` read through that copy on every dispatch — none of them snapshot or cache it at registration time — so an FR-3 runtime update is visible to Plugin Event dispatch exactly as it is to Direct/Cached Execution, with no separate propagation path to keep in sync.
+- **Rule:** System Config (file-based) is the only source of the daemon's own operational settings. Per-backend Config never touches disk and never configures the daemon itself. `hexput-session` holds the single mutable, live copy of a Session's per-backend Config; `hexput-plugin`, `hexput-script`, and `hexput-exec` read through that copy on every dispatch — none of them snapshot or cache it at registration time — so an FR-3 runtime update is visible to Plugin Event dispatch exactly as it is to Direct/Cached Execution, with no separate propagation path to keep in sync.
 
 ### AD-6 — Non-blocking dispatch is structural, not incidental [ADOPTED]
 
@@ -99,20 +99,20 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 
 - **Binds:** FR-24
 - **Prevents:** a systemd build and a Docker build independently inventing different config-discovery logic (different default paths, different override mechanisms) that silently diverge
-- **Rule:** `config/` resolves the System Config file's location via one fixed precedence regardless of packaging — explicit CLI flag, then environment variable, then a fixed default OS path. systemd units and Docker images both just set the environment variable or bind-mount the default path; neither changes `config/`'s resolution logic.
+- **Rule:** `hexput-config` resolves the System Config file's location via one fixed precedence regardless of packaging — explicit CLI flag, then environment variable, then a fixed default OS path. systemd units and Docker images both just set the environment variable or bind-mount the default path; neither changes `hexput-config`'s resolution logic.
 
 ### AD-8 — One check pass, one invocation point per submission path [ADOPTED]
 
 - **Binds:** FR-26, FR-3, FR-5, FR-6
 - **Prevents:** Direct submission, Cached registration, and Plugin registration each growing their own partial checker and disagreeing about what is a finding; the check drifting into a second, unenforced capability surface; the hot path paying for a check it already passed
-- **Rule:** `check/` exposes a single pure entry point taking a parsed AST plus the callable-name set and the active policy, and returning findings — it never executes a script, never reaches `rpc/` or `enforce/`, and holds no state between calls. It is invoked from exactly one place per submission path: `script/` on Direct Execution and on `CodeRegister` (never again on `CachedExecutionStart` — a registered script is checked once, at registration), and `plugin/` at Plugin registration. The mode (`off`/`warn`/`error`) is read from the `session/` live Config on every submission, never snapshotted (AD-5). Findings reuse the error shape defined once in `port/` (Consistency Conventions), so the daemon response, the CLI, and the language server render them identically. The check is advisory by construction: it never grants, denies, or substitutes for a capability check or a budget charge — those remain `enforce/`'s alone, reached only through the `Executor` (AD-3), and a script passing the check is not thereby authorized for anything.
+- **Rule:** `hexput-check` exposes a single pure entry point taking a parsed AST plus the callable-name set and the active policy, and returning findings — it never executes a script, never reaches `hexput-rpc` or `hexput-enforce`, and holds no state between calls. It is invoked from exactly one place per submission path: `hexput-script` on Direct Execution and on `CodeRegister` (never again on `CachedExecutionStart` — a registered script is checked once, at registration), and `hexput-plugin` at Plugin registration. The mode (`off`/`warn`/`error`) is read from the `hexput-session` live Config on every submission, never snapshotted (AD-5). Findings reuse the error shape defined once in `hexput-port` (Consistency Conventions), so the daemon response, the CLI, and the language server render them identically. The check is advisory by construction: it never grants, denies, or substitutes for a capability check or a budget charge — those remain `hexput-enforce`'s alone, reached only through the `Executor` (AD-3), and a script passing the check is not thereby authorized for anything.
 
 ## Consistency Conventions
 
 | Concern | Convention |
 | --- | --- |
 | Naming (entities, files, interfaces, events) | Code identifiers match PRD §3 Glossary terms verbatim (`Session`, `Plugin`, `GlobalVariable`, `Capability`, ...) — no synonyms |
-| Data & formats (ids, dates, error shapes, envelopes) | MessagePack (`rmp-serde`/`serde`) wire envelope for all Transports; Client ID and error shapes defined once in `port/`, reused by every adapter |
+| Data & formats (ids, dates, error shapes, envelopes) | MessagePack (`rmp-serde`/`serde`) wire envelope for all Transports; Client ID and error shapes defined once in `hexput-port`, reused by every adapter |
 | State & cross-cutting (mutation, errors, logging, config, auth) | All state mutation with security/budget consequences flows through `exec`/`enforce` (AD-3); structured logging via `tracing`, every entry tagged with Client ID (PRD FR-12); config split per AD-5 |
 | Locking discipline | No lock (Global Variable or otherwise) is ever held across an `.await` point — critical sections stay short and synchronous; re-acquire after suspension instead |
 
@@ -133,7 +133,7 @@ Dependency direction: Adapters depend on the Core `Port`; the Core never imports
 
 ## Structural Seed
 
-**[Amended 2026-09-18, post-final, per user direction: "her modülü kendi crate'ine ayıralım... shared crate'in iç modül yapısı da olabildiğince parçalı olmalı... bütün crateler lib olmalı, binarylerin çıkacağı bin diye ayrı bir crate olmalı."]** What was one crate with an internal module tree is now a Cargo workspace: one crate per Structural Seed module, plus crates for the language (never named as a module above because it sits underneath `script/`, `check/`, and `plugin/` rather than being one itself) and for developer tooling. This is not cosmetic — a crate boundary is a dependency edge Cargo enforces at compile time, where a module boundary was only convention. Several ADs below (AD-1, AD-3, AD-4, AD-5, AD-8) state a rule of the shape "only X may reach Y directly" — under the module tree that rule lived in code review; under the crate graph, the crate that must not reach Y simply does not list it as a dependency, and doing so anyway is a compile error, not a review finding.
+**[Amended 2026-09-18, post-final, per user direction: "her modülü kendi crate'ine ayıralım... shared crate'in iç modül yapısı da olabildiğince parçalı olmalı... bütün crateler lib olmalı, binarylerin çıkacağı bin diye ayrı bir crate olmalı."]** What was one crate with an internal module tree is now a Cargo workspace: one crate per Structural Seed module, plus crates for the language (never named as a module above because it sits underneath `hexput-script`, `hexput-check`, and `hexput-plugin` rather than being one itself) and for developer tooling. This is not cosmetic — a crate boundary is a dependency edge Cargo enforces at compile time, where a module boundary was only convention. Several ADs below (AD-1, AD-3, AD-4, AD-5, AD-8) state a rule of the shape "only X may reach Y directly" — under the module tree that rule lived in code review; under the crate graph, the crate that must not reach Y simply does not list it as a dependency, and doing so anyway is a compile error, not a review finding.
 
 **Every crate is a `lib` crate.** Exactly one crate in the workspace, `hexput-bin`, is allowed to produce a binary; every other crate — including `hexput-daemon` — exposes a `run()`-shaped entry point and nothing calls `std::process::exit` or owns a `fn main()`. `hexput-bin` itself stays systematically thin: one file per binary under `src/bin/`, each doing nothing but argument parsing hand-off and a call into the one library crate that actually implements that binary. No logic lives in `hexput-bin` that isn't about being an operating-system entry point.
 
@@ -142,10 +142,10 @@ Cargo.toml                    # [workspace], members below, pinned deps hoisted 
 crates/
   hexput-shared/               # cross-cutting types every other crate may depend on; internally split, never a grab-bag
     src/
-      diagnostics.rs           # Category, Code, Diagnostic, Span — the one error/finding shape (§7 LANGUAGE-REFERENCE, port/ errors)
+      diagnostics.rs           # Category, Code, Diagnostic, Span — the one error/finding shape (§7 LANGUAGE-REFERENCE, hexput-port errors)
       wire.rs                  # MessagePack envelope, correlation id, message-type enum (Consistency Conventions)
       ids.rs                   # ClientId, SessionId, PluginId — newtypes, never bare strings/uuids past the boundary
-      budget.rs                # the six Resource Budget dimensions (FR-8) as one enum, shared by enforce/check/metrics
+      budget.rs                # the six Resource Budget dimensions (FR-8) as one enum, shared by hexput-enforce, hexput-check and metrics
       lib.rs
 
   # — language: no execution, no I/O, no host access —
@@ -206,6 +206,7 @@ graph TD
   session[hexput-session] --> port
   session --> shared
   conn[hexput-connection] --> session
+  session --> globalvar
   script[hexput-script] --> parser
   script --> interp
   script --> check
@@ -245,7 +246,7 @@ What this graph makes a compile error rather than a review comment:
 
 - **AD-1:** only `hexput-daemon` depends on `hexput-transport`. `hexput-session`, `hexput-script`, and `hexput-plugin` do not — so none of them can branch on a transport type even by accident.
 - **AD-3:** `hexput-enforce` has exactly one dependent, `hexput-exec`. `hexput-rpc`, `hexput-plugin`, and `hexput-script` cannot reach it directly; a capability or budget check literally has to go through `hexput-exec`.
-- **AD-4:** `hexput-globalvar` depends on neither `hexput-plugin` (the actor) nor `hexput-rpc` — the store is reachable with the actor dead, and never reachable through RPC, because those import edges don't exist.
+- **AD-4:** `hexput-globalvar` depends on neither `hexput-plugin` (the actor) nor `hexput-rpc` — the store is reachable with the actor dead, and never reachable through RPC, because those import edges don't exist. The reverse edge `hexput-session -> hexput-globalvar` is required and present: AD-4 makes `hexput-session` the sole caller of `teardown(plugin_id)`, which it cannot be without depending on the store. (This edge was missing when the graph was first derived from the module tree, making AD-4's rule unimplementable; corrected 2026-09-18.)
 - **AD-5:** `hexput-config` (System Config) and `hexput-session` (per-backend Config) are separate crates with no dependency between them — the two surfaces cannot accidentally merge into one type.
 - **AD-8:** `hexput-check` depends on `hexput-ast` alone — not `hexput-interpreter`, not `hexput-rpc`, not `hexput-enforce`. It cannot execute a script or touch the host even by mistake; the capability to do so was never compiled in.
 
@@ -278,13 +279,13 @@ erDiagram
 
 ## Deferred
 
-- Exact wire message schema/field layout inside `port/` — implementation detail once `rmp-serde`/`serde` types exist; not an invariant two independently-built units would diverge on given AD-1.
+- Exact wire message schema/field layout inside `hexput-port` — implementation detail once `rmp-serde`/`serde` types exist; not an invariant two independently-built units would diverge on given AD-1.
 - TLS certificate reload mechanism (hot-reload vs. restart-required) — operational detail, not structural.
-- Priority tie-breaking convention, default handler order absent `priority`, and `async`+`priority` combination precedence — already flagged as [ASSUMPTION]s in PRD OQ-11; low risk, revisit before `plugin/` ordering logic is implemented.
-- Master-slave horizontal scaling — explicitly future work (PRD §6.2, brief Scope) — no AD here; `session/` and `plugin/` ownership models above are designed to not preclude it, not to implement it.
+- Priority tie-breaking convention, default handler order absent `priority`, and `async`+`priority` combination precedence — already flagged as [ASSUMPTION]s in PRD OQ-11; low risk, revisit before `hexput-plugin` ordering logic is implemented.
+- Master-slave horizontal scaling — explicitly future work (PRD §6.2, brief Scope) — no AD here; `hexput-session` and `hexput-plugin` ownership models above are designed to not preclude it, not to implement it.
 - OS-level sandboxing (seccomp/cgroups/namespaces) — permanently out per PRD/brief; not part of this spine's trust model.
 - Tree-sitter grammar / LSP (FR-14, FR-15) — `hexput-grammar` and `hexput-lsp-core`, separate deliverables/tools, not part of the daemon's own crate graph; no AD here. `hexput-lsp-core` depends on `hexput-check` (AD-8) as a library for its diagnostics, which is why that crate is pure and has no dependency on `hexput-daemon` or any crate that does.
-- Client SDKs (FR-10) — external, per-language libraries that speak the `port/` wire protocol; not part of the daemon's own architecture, so out of this spine entirely, not merely unmentioned.
+- Client SDKs (FR-10) — external, per-language libraries that speak the `hexput-port` wire protocol; not part of the daemon's own architecture, so out of this spine entirely, not merely unmentioned.
 - Benchmark harness structure (PRD SM-1, brief addendum) — thesis-deliverable detail, not a system invariant.
-- Exact `keyed` Global Variable storage layout (e.g. nested map keyed by Backend-supplied key) — implementation detail within `globalvar/`, owned by the code once it exists.
-- Deployment & environments: systemd-unit vs. Docker-image as the packaging artifact (or both), environment/config profiles (dev/staging/prod), process-supervision and restart policy, upgrade/rollback story. System Config *discovery* is structural and covered by AD-7; everything else here is packaging-time and doesn't change `config/`'s logic or any other module's structure, so no further AD is needed — this is a deliberate defer, not a silent gap.
+- Exact `keyed` Global Variable storage layout (e.g. nested map keyed by Backend-supplied key) — implementation detail within `hexput-globalvar`, owned by the code once it exists.
+- Deployment & environments: systemd-unit vs. Docker-image as the packaging artifact (or both), environment/config profiles (dev/staging/prod), process-supervision and restart policy, upgrade/rollback story. System Config *discovery* is structural and covered by AD-7; everything else here is packaging-time and doesn't change `hexput-config`'s logic or any other module's structure, so no further AD is needed — this is a deliberate defer, not a silent gap.

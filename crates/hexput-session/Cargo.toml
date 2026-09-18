@@ -10,6 +10,8 @@ rust-version.workspace = true
 [dependencies]
 hexput-port = { path = "../hexput-port" }
 hexput-shared = { path = "../hexput-shared" }
+# AD-4: session is the sole caller of hexput_globalvar::teardown(plugin_id).
+hexput-globalvar = { path = "../hexput-globalvar" }
 
 [lints]
 workspace = true
