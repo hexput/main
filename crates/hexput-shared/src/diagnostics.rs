@@ -66,9 +66,13 @@ pub enum Category {
     Lexical,
     /// Malformed construct, `break` outside a loop, duplicate `let`. Detected at parse time.
     Syntax,
-    /// A conversion §4.2 does not perform. Detected at runtime.
+    /// A conversion §4.2 does not perform, an index of the wrong type for its receiver (or any
+    /// index on a non-collection), or property access on a value that is not an object.
+    /// Detected at runtime.
     Type,
-    /// Undeclared identifier, property access on `null`. Detected at runtime.
+    /// Undeclared identifier, property access on `null`, an array write outside the one
+    /// appendable position. Detected at runtime. Reading outside an array's range is not an
+    /// error — it yields `null` (§7).
     Reference,
     /// Wrong argument count. Detected at runtime.
     Arity,
@@ -160,6 +164,31 @@ impl Code {
     pub const INVALID_UNICODE_ESCAPE: Self = Self::new("lex.invalid_unicode_escape");
     /// A numeric literal is not representable as a finite f64 (§3 — infinity is never a value).
     pub const INVALID_NUMBER: Self = Self::new("lex.invalid_number");
+
+    // --- runtime codes (Story 1.6) ---
+
+    /// An operator's operand has no conversion §4.2/§4.3 performs — a non-numeric string or a
+    /// collection in arithmetic, a collection concatenated to a string. Category `type`.
+    pub const OPERAND_MISMATCH: Self = Self::new("type.operand_mismatch");
+    /// An index of the wrong type for its receiver: a non-number on an array, a non-string on
+    /// an object, or any index on a value that is not a collection. Category `type`.
+    pub const INVALID_INDEX: Self = Self::new("type.invalid_index");
+    /// `.name` on a value that is not an object (number, bool, string, array). Category `type`.
+    pub const INVALID_PROPERTY_ACCESS: Self = Self::new("type.invalid_property_access");
+    /// A read of a name no enclosing scope declares. Category `reference`.
+    pub const UNDECLARED_IDENTIFIER: Self = Self::new("reference.undeclared_identifier");
+    /// An assignment to a name no enclosing scope declares — there are no implicit globals.
+    /// Category `reference`.
+    pub const UNDECLARED_ASSIGNMENT: Self = Self::new("reference.undeclared_assignment");
+    /// Property or index access on `null` without `?.`. Category `reference`.
+    pub const NULL_ACCESS: Self = Self::new("reference.null_access");
+    /// An array write at a negative, fractional, or out-of-range index other than the length
+    /// (which appends). Reads outside the range yield `null` instead. Category `reference`.
+    pub const INDEX_OUT_OF_RANGE: Self = Self::new("reference.index_out_of_range");
+    /// `/` or `%` with a zero divisor. Category `arithmetic`.
+    pub const DIVISION_BY_ZERO: Self = Self::new("arithmetic.division_by_zero");
+    /// An operation whose result would be infinite or `NaN`. Category `arithmetic`.
+    pub const NON_FINITE: Self = Self::new("arithmetic.non_finite");
 }
 
 impl fmt::Display for Code {

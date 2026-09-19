@@ -19,6 +19,7 @@ hexput-shared = { path = "../hexput-shared" }
 hexput-lexer = { path = "../hexput-lexer" }
 hexput-ast = { path = "../hexput-ast" }
 hexput-parser = { path = "../hexput-parser" }
+hexput-interpreter = { path = "../hexput-interpreter" }
 
 [lints]
 workspace = true

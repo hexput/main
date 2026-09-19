@@ -27,3 +27,34 @@ fn duplicate_object_key_code_is_stable() {
         "syntax.duplicate_object_key"
     );
 }
+
+#[test]
+fn runtime_codes_are_stable_and_distinct() {
+    use hexput_shared::diagnostics::Code;
+    let codes = [
+        (Code::OPERAND_MISMATCH, "type.operand_mismatch"),
+        (Code::INVALID_INDEX, "type.invalid_index"),
+        (
+            Code::INVALID_PROPERTY_ACCESS,
+            "type.invalid_property_access",
+        ),
+        (
+            Code::UNDECLARED_IDENTIFIER,
+            "reference.undeclared_identifier",
+        ),
+        (
+            Code::UNDECLARED_ASSIGNMENT,
+            "reference.undeclared_assignment",
+        ),
+        (Code::NULL_ACCESS, "reference.null_access"),
+        (Code::INDEX_OUT_OF_RANGE, "reference.index_out_of_range"),
+        (Code::DIVISION_BY_ZERO, "arithmetic.division_by_zero"),
+        (Code::NON_FINITE, "arithmetic.non_finite"),
+    ];
+    for (i, (code, text)) in codes.iter().enumerate() {
+        assert_eq!(code.as_str(), *text);
+        for (other, _) in &codes[i + 1..] {
+            assert_ne!(code, other);
+        }
+    }
+}

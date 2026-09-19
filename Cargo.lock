@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "equivalent"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
 name = "hexput-ast"
 version = "0.1.0"
 dependencies = [
@@ -96,6 +108,7 @@ name = "hexput-interpreter"
 version = "0.1.0"
 dependencies = [
  "hexput-ast",
+ "indexmap",
 ]
 
 [[package]]
@@ -174,6 +187,7 @@ name = "hexput-tests"
 version = "0.1.0"
 dependencies = [
  "hexput-ast",
+ "hexput-interpreter",
  "hexput-lexer",
  "hexput-parser",
  "hexput-shared",
@@ -184,4 +198,14 @@ name = "hexput-transport"
 version = "0.1.0"
 dependencies = [
  "hexput-port",
+]
+
+[[package]]
+name = "indexmap"
+version = "2.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+dependencies = [
+ "equivalent",
+ "hashbrown",
 ]

@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 hexput-ast = { path = "../hexput-ast" }
+indexmap = { workspace = true }
 
 [lints]
 workspace = true

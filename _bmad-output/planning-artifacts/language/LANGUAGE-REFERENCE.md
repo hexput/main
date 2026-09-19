@@ -36,7 +36,7 @@ Hexput is dynamically typed with six value types:
 | Type | Literal form | Notes |
 | --- | --- | --- |
 | `null` | `null` | The only value of its type; not a default for anything |
-| `bool` | `true`, `false` | The only type accepted in a condition |
+| `bool` | `true`, `false` | What `!`, comparisons, and equality produce. Conditions accept any value (§4.1) |
 | `number` | `1`, `-3`, `2.5`, `1e3` | **[DECISION]** One numeric type, IEEE-754 double. No separate integer type |
 | `string` | `"text"`, `'text'` | **[DECISION]** Escapes `\n \t \r \\ \" \' \u{...}`. No interpolation in v2. **[DECISION]** String literals may span lines: a raw newline inside one is ordinary content, not an error |
 | `array` | `[1, 2, 3]` | Ordered, heterogeneous, zero-indexed; trailing comma allowed |
@@ -131,6 +131,10 @@ Truthiness (§4.1) and equality are deliberately different questions: `0` is fal
 | `string` | Parsed if it is a valid number literal with optional surrounding whitespace; otherwise a `type` error |
 | `array` / `object` | `type` error |
 
+**[DECISION, 2026-09-19] Signed numeric strings.** To-number accepts one optional leading `+` or `-` directly before the number literal, inside the optional surrounding whitespace: `"-3" - 1` is `-4`. Anything else that is not a §3 number literal — including `""`, `"NaN"`, `"Infinity"`, `"0x10"`, `".5"`, and `"- 3"` — is a `type` error.
+
+**[DECISION, 2026-09-19] Number to string is JavaScript-style.** Shortest round-tripping digits; plain notation for magnitudes in `[1e-6, 1e21)`, exponent notation outside it (`1e21` → `"1e+21"`, `1e-7` → `"1e-7"`); whole values without a decimal point; `-0` → `"0"`.
+
 ### 4.4 Optional access
 
 **[DECISION]** `?.` reads a property or index without raising when the left side is `null`:
@@ -196,7 +200,7 @@ Every failure carries a category, a stable code, a message, and a source span (E
 | `lexical` | Unterminated string, unknown character | Lex time |
 | `syntax` | Malformed construct, `break` outside a loop, duplicate `let` | Parse time |
 | `type` | A conversion §4.2 does not perform — arithmetic on a non-numeric string, stringifying a collection, a collection in a numeric operand | Runtime |
-| `reference` | Undeclared identifier, index out of range, property access on `null` | Runtime |
+| `reference` | Undeclared identifier, property access on `null`, an array write outside the appendable range | Runtime |
 | `arity` | Wrong argument count | Runtime |
 | `arithmetic` | Division by zero, non-finite result | Runtime |
 | `depth` | Call-depth limit exceeded | Runtime |
@@ -207,6 +211,10 @@ Every failure carries a category, a stable code, a message, and a source span (E
 **[DECISION] Reading a missing object key yields `null`, not an error** — optional fields are the common case for a rule author, and `if (input.discount)` should read as "if a discount was supplied" rather than blowing up. Writing to a missing key creates it.
 
 **[DECISION] Reading an index outside an array's range yields `null`** as well, for the same reason. A non-number index on an array, or a number index on a non-collection, is still a `type` error.
+
+**[DECISION, 2026-09-19] Array writes.** `a[i] = v` replaces an existing element, and `a[len] = v` (exactly the length) appends. Any other out-of-range, negative, or fractional index write is a `reference` error (`reference.index_out_of_range`) — a write cannot be "absent data". Reads outside the range, including negative or fractional indices, still yield `null`.
+
+**[DECISION, 2026-09-19] Object indices are strings.** A number (or any non-string) index on an object is a `type` error, as is any index on a `string`, `number`, or `bool`, and any `.property` on a value that is not an object.
 
 **[DECISION] Two cases stay `reference` errors**, because each means the script is wrong rather than the data being absent:
 

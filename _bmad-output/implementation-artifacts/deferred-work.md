@@ -38,3 +38,7 @@ Append-only. Each entry is work identified during a build but deliberately not d
 - source_spec: `spec-1-3-parse-expressions-declarations-and-member-access.md`
   summary: Clarify Story 1.10's empty-versus-omitted callable-name list contract and align the Epic 1 context before implementing the checker.
   evidence: Story 1.10 calls the CLI list empty but separately exempts a caller supplying no list. The refreshed context distinguishes empty and omitted without specifying the CLI representation; a medium-impact future checker divergence is unverified while that crate remains a stub.
+
+- source_spec: `spec-1-6-evaluate-expressions-and-variable-scope.md`
+  summary: Reference cycles between `Arc`-shared values and scopes are never freed, so a self-containing collection (`let a = []; a[0] = a;`) leaks for the life of the process, and Story 1.7 closures will make such cycles routine.
+  evidence: `Value::Array`/`Value::Object` and `Scope` are `Arc`-linked with no cycle collection (crates/hexput-interpreter/src/value.rs, environment.rs). In 1.6 only an explicit self-reference triggers it, but in 1.7 every named function bound in the scope it captures forms a scope → function → scope cycle, so each Script execution in the long-running Daemon would leak its root scope. Decide the memory model (per-execution arena/heap owned by the machine, a cycle collector, or explicit teardown of the root scope at execution end) in Story 1.7, before closures land, and make Story 3.5's memory budget consistent with it.
