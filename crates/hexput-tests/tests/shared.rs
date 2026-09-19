@@ -19,3 +19,11 @@ fn loop_context_code_is_stable() {
         "syntax.loop_control_outside_loop"
     );
 }
+
+#[test]
+fn duplicate_object_key_code_is_stable() {
+    assert_eq!(
+        hexput_shared::diagnostics::Code::DUPLICATE_OBJECT_KEY.as_str(),
+        "syntax.duplicate_object_key"
+    );
+}

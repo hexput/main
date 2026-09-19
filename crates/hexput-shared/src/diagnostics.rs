@@ -141,6 +141,9 @@ impl Code {
     /// Loop control appeared outside a lexically enclosing loop.
     pub const LOOP_CONTROL_OUTSIDE_LOOP: Self = Self::new("syntax.loop_control_outside_loop");
 
+    /// Two entries in an object literal have the same decoded key.
+    pub const DUPLICATE_OBJECT_KEY: Self = Self::new("syntax.duplicate_object_key");
+
     // --- `lexical` codes (Story 1.2) ---
 
     /// A string literal ran to a raw newline or to end of input without its closing quote.

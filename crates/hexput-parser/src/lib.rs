@@ -7,7 +7,9 @@ use hexput_ast::*;
 use hexput_lexer::{Token, TokenKind, tokenize};
 use std::collections::HashSet;
 
+mod expressions;
 mod statements;
+use expressions::{ExpressionState, Pending};
 
 /// Parse an entire file, preserving grouping, optional access links, and source locations.
 ///
@@ -39,29 +41,6 @@ struct Parser<'a> {
     program: Program,
 }
 
-/// Delimiters isolate reductions; an index frame owns the receiver while its key is parsed.
-enum Pending {
-    Unary(Spanned<UnaryOperator>),
-    Binary(Spanned<BinaryOperator>, u8),
-    Group(Span),
-    Index {
-        base: ExprId,
-        operator: Span,
-        open: Span,
-        optional: bool,
-    },
-}
-
-impl Pending {
-    fn precedence(&self) -> Option<u8> {
-        match self {
-            Self::Unary(_) => Some(7),
-            Self::Binary(_, p) => Some(*p),
-            _ => None,
-        }
-    }
-}
-
 impl Parser<'_> {
     fn peek(&self) -> Option<&TokenKind> {
         self.tokens.get(self.pos).map(|t| &t.kind)
@@ -80,18 +59,7 @@ impl Parser<'_> {
     fn expected(&self, expected: &str) -> Diagnostic {
         let found = self.tokens.get(self.pos).map_or_else(
             || "end of input".to_owned(),
-            |t| {
-                // Bound source scalars before escaping, so even a huge string token produces
-                // a small, readable diagnostic. Its diagnostic span still covers every byte.
-                let mut chars = self.source[t.span.range()].chars();
-                let preview: String = chars.by_ref().take(64).collect();
-                let truncated = if chars.next().is_some() {
-                    "… (truncated)"
-                } else {
-                    ""
-                };
-                format!("`{}{truncated}`", preview.escape_debug())
-            },
+            |t| diagnostic_preview(&self.source[t.span.range()]),
         );
         Diagnostic::new(
             Category::Syntax,
@@ -129,62 +97,16 @@ impl Parser<'_> {
         self.program.expression(id).span
     }
 
-    fn simple_statement(
-        &mut self,
-        names: &mut HashSet<String>,
-    ) -> Result<StatementKind, Diagnostic> {
-        let kind = if self.peek() == Some(&TokenKind::Let) {
-            let keyword = self.bump().span;
-            let name = self.identifier()?;
-            if !names.insert(name.name.clone()) {
-                return Err(Diagnostic::new(
-                    Category::Syntax,
-                    Code::DUPLICATE_DECLARATION,
-                    format!(
-                        "expected a new binding name; `{}` is already declared in this scope",
-                        name.name
-                    ),
-                    name.span,
-                ));
-            }
-            let equals = self.expect(TokenKind::Assign, "`=` and an initializer")?;
-            let initializer = self.expression()?;
-            StatementKind::Let {
-                keyword,
-                name,
-                equals,
-                initializer,
-            }
-        } else {
-            let target = self.expression()?;
-            if self.peek() == Some(&TokenKind::Assign) {
-                if !self.valid_target(target) {
-                    return Err(Diagnostic::new(
-                        Category::Syntax,
-                        Code::INVALID_ASSIGNMENT_TARGET,
-                        "expected a name or ordinary property/index assignment target before `=`",
-                        self.expr_span(target),
-                    ));
-                }
-                let equals = self.bump().span;
-                let value = self.expression()?;
-                StatementKind::Assignment {
-                    target,
-                    equals,
-                    value,
-                }
-            } else {
-                StatementKind::Expression(target)
-            }
-        };
-        Ok(kind)
-    }
-
     fn valid_target(&self, id: ExprId) -> bool {
         match &self.program.expression(id).kind {
             ExpressionKind::Identifier(_) => true,
             // Grouping ends a chain; optional reads inside a receiver group or index are reads.
-            ExpressionKind::Access { links, .. } => links.iter().all(|link| !link.optional),
+            ExpressionKind::Access { links, .. } => {
+                links.iter().all(|link| !link.optional)
+                    && links
+                        .last()
+                        .is_some_and(|link| !matches!(link.kind, AccessKind::Call { .. }))
+            }
             _ => false,
         }
     }
@@ -232,162 +154,6 @@ impl Parser<'_> {
             _ => unreachable!("delimiters are closed separately"),
         };
         values.push(id);
-    }
-
-    fn expression(&mut self) -> Result<ExprId, Diagnostic> {
-        let mut values = Vec::new();
-        let mut pending: Vec<Pending> = Vec::new();
-        let mut operand = true;
-        loop {
-            if operand {
-                let span = self.span();
-                let kind = match self.peek() {
-                    Some(TokenKind::Minus | TokenKind::Bang) => {
-                        let op = if self.bump().kind == TokenKind::Minus {
-                            UnaryOperator::Negate
-                        } else {
-                            UnaryOperator::Not
-                        };
-                        pending.push(Pending::Unary(Spanned { kind: op, span }));
-                        continue;
-                    }
-                    Some(TokenKind::LParen) => {
-                        self.bump();
-                        pending.push(Pending::Group(span));
-                        continue;
-                    }
-                    Some(
-                        TokenKind::Number(_)
-                        | TokenKind::Str(_)
-                        | TokenKind::Ident(_)
-                        | TokenKind::True
-                        | TokenKind::False
-                        | TokenKind::Null,
-                    ) => match self.bump().kind {
-                        TokenKind::Number(n) => ExpressionKind::Literal(Literal::Number(n)),
-                        TokenKind::Str(s) => ExpressionKind::Literal(Literal::String(s)),
-                        TokenKind::True => ExpressionKind::Literal(Literal::Bool(true)),
-                        TokenKind::False => ExpressionKind::Literal(Literal::Bool(false)),
-                        TokenKind::Null => ExpressionKind::Literal(Literal::Null),
-                        TokenKind::Ident(name) => {
-                            ExpressionKind::Identifier(Identifier { name, span })
-                        }
-                        _ => unreachable!(),
-                    },
-                    _ => {
-                        return Err(
-                            self.expected("an expression (literal, identifier, `(`, `-`, or `!`)")
-                        );
-                    }
-                };
-                values.push(self.add(kind, span));
-                operand = false;
-                continue;
-            }
-            match self.peek() {
-                Some(TokenKind::Dot | TokenKind::QuestionDot | TokenKind::LBracket) => {
-                    let token = self.bump();
-                    let optional = token.kind == TokenKind::QuestionDot;
-                    let base = values.pop().expect("postfix access follows an operand");
-                    let open = if token.kind == TokenKind::LBracket {
-                        Some(token.span)
-                    } else if optional && self.peek() == Some(&TokenKind::LBracket) {
-                        Some(self.bump().span)
-                    } else {
-                        None
-                    };
-                    if let Some(open) = open {
-                        pending.push(Pending::Index {
-                            base,
-                            operator: token.span,
-                            open,
-                            optional,
-                        });
-                        operand = true;
-                    } else {
-                        let name = self.identifier()?;
-                        let link = AccessLink {
-                            span: cover(token.span, name.span),
-                            operator: token.span,
-                            optional,
-                            kind: AccessKind::Property(name),
-                        };
-                        values.push(self.access(base, link));
-                    }
-                }
-                Some(TokenKind::RParen | TokenKind::RBracket) => {
-                    while pending.last().is_some_and(|p| p.precedence().is_some()) {
-                        self.reduce(pending.pop().unwrap(), &mut values);
-                    }
-                    let Some(frame) = pending.pop() else {
-                        break;
-                    };
-                    let inner = values.pop().expect("closing delimiters follow an operand");
-                    let id = match frame {
-                        Pending::Group(open) => {
-                            let close = self.expect(TokenKind::RParen, "`)` to close the group")?;
-                            self.add(
-                                ExpressionKind::Group {
-                                    open,
-                                    expression: inner,
-                                    close,
-                                },
-                                cover(open, close),
-                            )
-                        }
-                        Pending::Index {
-                            base,
-                            operator,
-                            open,
-                            optional,
-                        } => {
-                            let close =
-                                self.expect(TokenKind::RBracket, "`]` to close the index")?;
-                            self.access(
-                                base,
-                                AccessLink {
-                                    span: cover(operator, close),
-                                    operator,
-                                    optional,
-                                    kind: AccessKind::Index {
-                                        open,
-                                        expression: inner,
-                                        close,
-                                    },
-                                },
-                            )
-                        }
-                        _ => unreachable!(),
-                    };
-                    values.push(id);
-                }
-                Some(kind) if binary(kind).is_some() => {
-                    let (kind, precedence) = binary(self.peek().unwrap()).unwrap();
-                    while pending
-                        .last()
-                        .and_then(Pending::precedence)
-                        .is_some_and(|p| p >= precedence)
-                    {
-                        self.reduce(pending.pop().unwrap(), &mut values);
-                    }
-                    let span = self.bump().span;
-                    pending.push(Pending::Binary(Spanned { kind, span }, precedence));
-                    operand = true;
-                }
-                _ => break,
-            }
-        }
-        while let Some(op) = pending.pop() {
-            if op.precedence().is_some() {
-                self.reduce(op, &mut values);
-            } else {
-                return Err(self.expected(match op {
-                    Pending::Group(_) => "`)` to close the group",
-                    _ => "`]` to close the index",
-                }));
-            }
-        }
-        Ok(values.pop().expect("an expression has one completed value"))
     }
 }
 
@@ -438,4 +204,16 @@ fn eof_span(source: &str) -> Span {
         }
     }
     Span::new(source.len(), 0, line, column)
+}
+
+/// Bound scalars before escaping while leaving diagnostic spans untouched.
+fn diagnostic_preview(text: &str) -> String {
+    let mut chars = text.chars();
+    let preview: String = chars.by_ref().take(64).collect();
+    let truncated = if chars.next().is_some() {
+        "… (truncated)"
+    } else {
+        ""
+    };
+    format!("`{}{truncated}`", preview.escape_debug())
 }

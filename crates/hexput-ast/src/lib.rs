@@ -91,6 +91,15 @@ pub struct Statement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
+    /// Named declaration; anonymous functions occur only in expressions.
+    Function {
+        name: Identifier,
+        function: Function,
+    },
+    Return {
+        keyword: Span,
+        value: Option<ExprId>,
+    },
     Block(BlockId),
     If {
         branches: Vec<ConditionalBranch>,
@@ -144,6 +153,17 @@ pub struct Expression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpressionKind {
+    Function(Function),
+    Array {
+        open: Span,
+        elements: Vec<ExprId>,
+        close: Span,
+    },
+    Object {
+        open: Span,
+        entries: Vec<ObjectEntry>,
+        close: Span,
+    },
     Literal(Literal),
     Identifier(Identifier),
     Group {
@@ -204,12 +224,12 @@ pub enum BinaryOperator {
     Or,
 }
 
-/// A property or index operation, in source order within its chain.
+/// A property, index, or ordinary call operation, in source order within its chain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessLink {
-    /// From `.` / `?.` / `[` through the property or closing bracket.
+    /// From `.` / `?.` / `[` / `(` through the property or closing delimiter.
     pub span: Span,
-    /// `.` or `?.` for properties; `[` or `?.` for indices.
+    /// `.` or `?.` for properties; `[` or `?.` for indices; `(` for calls.
     pub operator: Span,
     pub optional: bool,
     pub kind: AccessKind,
@@ -217,10 +237,36 @@ pub struct AccessLink {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccessKind {
+    /// Ordinary call in the same uninterrupted optional-access chain.
+    Call {
+        open: Span,
+        arguments: Vec<ExprId>,
+        close: Span,
+    },
     Property(Identifier),
     Index {
         open: Span,
         expression: ExprId,
         close: Span,
     },
+}
+
+/// Function syntax owns ordered parameter names and links to a flat body arena.
+/// The declaration owns a name; expression functions are always anonymous.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub keyword: Span,
+    pub open: Span,
+    pub parameters: Vec<Identifier>,
+    pub close: Span,
+    pub body: BlockId,
+}
+
+/// An insertion-ordered entry. Keys are decoded, while their spans retain source spelling.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectEntry {
+    pub key: Identifier,
+    pub colon: Span,
+    pub value: ExprId,
+    pub span: Span,
 }

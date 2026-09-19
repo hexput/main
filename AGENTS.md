@@ -19,7 +19,7 @@ BMAD mirrors this — `_bmad/custom/config.user.toml` pins `communication_langua
 
 _Last updated: 2026-09-19._
 
-**Epic 1 Stories 1.1–1.4 are done; Stories 1.5–1.10 are `backlog`.** The Cargo workspace has 23 crates under `crates/`. `hexput-lexer` tokenizes source; `hexput-shared::diagnostics` defines shared errors; `hexput-ast` holds owned, spanned syntax in flat expression and block arenas; `hexput-parser::parse` parses scalar expressions, declarations, assignments, ordinary/optional property/index access, lexical blocks, conditionals, loops, and loop control. Tests live in `hexput-tests`. Functions and collection literals remain for Story 1.5. The interpreter, check pass, and daemon crates remain stubs. This is a from-scratch v2 rewrite; there is no v1 code in this repository.
+**Epic 1 Stories 1.1–1.5 are done; Stories 1.6–1.10 are `backlog`.** The Cargo workspace has 23 crates under `crates/`. `hexput-lexer` tokenizes source; `hexput-shared::diagnostics` defines shared errors; `hexput-ast` holds owned, spanned syntax in flat expression and block arenas; `hexput-parser::parse` parses scalar expressions, declarations, assignments, ordinary/optional property/index access, lexical blocks, conditionals, loops, loop control, named/anonymous functions, calls, returns, objects, and arrays. A shared continuation driver keeps nested function bodies and expressions stack-safe. Tests live in `hexput-tests`. The interpreter, check pass, and daemon crates remain stubs. This is a from-scratch v2 rewrite; there is no v1 code in this repository.
 
 See [Build, Lint, Test](#build-lint-test) below for the commands that actually work today.
 
@@ -34,7 +34,7 @@ Planning is complete and final:
 
 Three amendments landed after the PRD and spine were first marked final, all recorded in their `.memlog.md` files: **FR-26** (optional, Backend-configured static check before execution), **AD-8** with the `hexput-check` crate, and — largest of the three — the **crate split**: the Structural Seed is no longer one crate with an internal module tree but a Cargo workspace (22 crates at the time, plus `hexput-tests` since), one crate per module plus language (`hexput-ast`/`hexput-lexer`/`hexput-parser`/`hexput-interpreter`) and tooling crates, every crate a `lib`, with exactly one binary-producing crate (`hexput-bin`). Several Architecture Decisions (AD-1, AD-3, AD-4, AD-5, AD-8) are now compiler-enforced by which crate depends on which — see the spine's "Crate dependency graph" subsection for the exact mapping before writing any crate's `Cargo.toml`.
 
-**Next step:** implement Story 1.5 (parse functions, callbacks, objects, and arrays) via `bmad-build`. Keep this section honest as stories land.
+**Next step:** implement Story 1.6 (evaluate expressions and variable scope) via `bmad-build`. Keep this section honest as stories land.
 
 ## Build, Lint, Test
 

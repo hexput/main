@@ -52,6 +52,8 @@ ben";
 
 is one string containing two newlines. Consequently a string is unterminated only at end of input, never at end of line, and a string's source span may cover several lines (Story 1.8 renders multi-line spans without truncating the location). There is no line-continuation escape: a `\` immediately before a newline is an invalid escape, not a join.
 
+**[DECISION, 2026-09-19]** Object literals reject repeated decoded keys, including collisions between bare, quoted, and escaped spellings (for example, `a`, `"a"`, and `"\u{61}"`).
+
 Functions are values (§6) but are not storable in a Global Variable. **[DECISION]** — a function closes over an environment, and persisting one across Event invocations would make Global Variable lifetime semantics (FR-25) undefinable.
 
 **[DECISION] Number edge cases:** division by zero, and any operation producing `NaN` or infinity, raise a runtime error rather than yielding a non-finite value. A rules engine that returns `NaN` has failed, not computed.
@@ -163,9 +165,11 @@ continue;                    // innermost loop only
 ```
 
 - **Scoping** is lexical and block-level. A `let` binds in its enclosing block; an inner block may shadow an outer binding, and the outer binding is intact after the block ends.
+- **[DECISION, 2026-09-19]** `let`, named functions, and parameters share one block namespace. Duplicate parameters and redeclarations in the function's own body are compile-time errors; nested blocks may shadow them.
 - **[DECISION]** Re-declaring the same name in the same block is a compile-time error. Assignment to an undeclared name is a runtime error — there is no implicit global creation.
 - **[DECISION]** `for (item in array)` binds each element; `for (key in object)` binds each key as a `string`, in insertion order. Mutating the collection being iterated is a runtime error rather than undefined behavior.
-- **[DECISION]** `break` and `continue` outside a loop are compile-time errors.
+- **[DECISION]** `break` and `continue` outside a loop are compile-time errors. A function body starts its own loop context; loops surrounding its declaration do not authorize loop control inside it.
+- **[DECISION, 2026-09-19]** Top-level `return` is valid, including inside top-level control flow, and represents the Script result. A bare return has no expression only before `;`, `}`, or end of input; whitespace never terminates it.
 
 ## 6. Functions and callbacks
 
@@ -175,6 +179,8 @@ let f = fn(a) { return a * 2; };       // anonymous function, expression positio
 items.each(fn(item) { ... });          // callback as an argument
 ```
 
+- **[DECISION, 2026-09-19]** Calls and parameter lists allow a trailing comma, as array and object literals do; holes and missing list entries are invalid.
+- Named function declarations follow the same semicolon rule as other statements (§2). A leading statement-position brace is a block; object expressions belong in value positions or may be grouped.
 - Parameters are positional. **[DECISION]** Calling with the wrong argument count is a runtime error — no implicit `null` padding and no variadic collection.
 - A function body that reaches its end without `return` yields `null`.
 - **[DECISION]** Closures capture their defining scope **by reference**, so a callback sees later mutations of a captured binding.
