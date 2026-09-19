@@ -1,6 +1,6 @@
 //! Owned, source-spanned syntax data; no parsing, evaluation, or host access.
 //!
-//! Expressions live in a flat arena and refer to children by [`ExprId`]. This keeps dropping,
+//! Expressions and blocks live in flat arenas, linked by [`ExprId`] and [`BlockId`]. This keeps dropping,
 //! cloning and inspecting deeply nested source safe without recursive ownership. IDs belong to
 //! their enclosing [`Program`]; consumers must not mix IDs from different programs.
 
@@ -10,11 +10,51 @@ pub use hexput_shared::diagnostics::{Category, Code, Diagnostic, Span};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExprId(pub usize);
 
+/// An index into the owning [`Program::blocks`]; never mix IDs between programs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlockId(pub usize);
+
+/// A brace-delimited lexical scope. Children use IDs, keeping all ownership flat.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Block {
+    pub span: Span,
+    pub open: Span,
+    pub close: Span,
+    pub statements: Vec<Statement>,
+}
+
+/// A parenthesized condition, including both delimiter locations.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Condition {
+    pub open: Span,
+    pub expression: ExprId,
+    pub close: Span,
+}
+
+/// An ordered conditional branch; `else_keyword` is absent on the initial branch.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConditionalBranch {
+    pub else_keyword: Option<Span>,
+    pub keyword: Span,
+    pub condition: Condition,
+    pub body: BlockId,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElseBranch {
+    pub keyword: Span,
+    pub body: BlockId,
+}
+
 /// A complete file. Its span includes leading and trailing trivia (and an initial BOM).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub span: Span,
     pub statements: Vec<Statement>,
+    /// Blocks are allocated when their closing brace is parsed, so nested bodies precede
+    /// their enclosing block. Follow [`BlockId`] links from statements for source traversal;
+    /// arena order is close order, not statement order.
+    pub blocks: Vec<Block>,
     /// Most children precede parents, but index expressions may be forward references:
     /// in `a.b[c]`, the chain node exists before `c` and gains its index link afterward.
     /// Traverse by following [`ExprId`] links, never by assuming arena order is tree order.
@@ -22,6 +62,15 @@ pub struct Program {
 }
 
 impl Program {
+    /// Look up a block belonging to this program.
+    ///
+    /// # Panics
+    /// Panics if the ID is outside [`Self::blocks`].
+    #[must_use]
+    pub fn block(&self, id: BlockId) -> &Block {
+        &self.blocks[id.0]
+    }
+
     /// Look up an expression belonging to this program.
     ///
     /// # Panics
@@ -42,6 +91,31 @@ pub struct Statement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
+    Block(BlockId),
+    If {
+        branches: Vec<ConditionalBranch>,
+        else_branch: Option<ElseBranch>,
+    },
+    While {
+        keyword: Span,
+        condition: Condition,
+        body: BlockId,
+    },
+    For {
+        keyword: Span,
+        open: Span,
+        binding: Identifier,
+        in_keyword: Span,
+        iterable: ExprId,
+        close: Span,
+        body: BlockId,
+    },
+    Break {
+        keyword: Span,
+    },
+    Continue {
+        keyword: Span,
+    },
     Let {
         keyword: Span,
         name: Identifier,

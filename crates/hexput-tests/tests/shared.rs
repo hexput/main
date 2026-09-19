@@ -11,3 +11,11 @@ fn syntax_codes_are_stable_and_distinct() {
         "syntax.duplicate_declaration"
     );
 }
+
+#[test]
+fn loop_context_code_is_stable() {
+    assert_eq!(
+        hexput_shared::diagnostics::Code::LOOP_CONTROL_OUTSIDE_LOOP.as_str(),
+        "syntax.loop_control_outside_loop"
+    );
+}

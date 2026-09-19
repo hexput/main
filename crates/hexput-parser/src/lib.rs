@@ -1,17 +1,19 @@
 #![forbid(clippy::undocumented_unsafe_blocks)]
 
-//! Pure source-to-AST parser for scalar expressions, declarations, and assignments.
+//! Pure source-to-AST parser for expressions, scoped blocks, and control flow.
 //! Explicit operator and delimiter stacks avoid native-stack recursion, including on errors.
 
 use hexput_ast::*;
 use hexput_lexer::{Token, TokenKind, tokenize};
 use std::collections::HashSet;
 
+mod statements;
+
 /// Parse an entire file, preserving grouping, optional access links, and source locations.
 ///
 /// # Errors
 /// Returns lexical diagnostics unchanged, or the first syntax diagnostic. Unsupported language
-/// constructs are rejected. Names need not be declared; duplicate top-level declarations fail.
+/// constructs are rejected. Names need not be declared; duplicate declarations in a scope fail.
 pub fn parse(source: &str) -> Result<Program, Diagnostic> {
     let tokens = tokenize(source)?;
     Parser {
@@ -23,6 +25,7 @@ pub fn parse(source: &str) -> Result<Program, Diagnostic> {
             span: Span::new(0, source.len(), 1, 1),
             statements: Vec::new(),
             expressions: Vec::new(),
+            blocks: Vec::new(),
         },
     }
     .run()
@@ -126,69 +129,55 @@ impl Parser<'_> {
         self.program.expression(id).span
     }
 
-    fn run(mut self) -> Result<Program, Diagnostic> {
-        let mut names = HashSet::new();
-        while self.peek().is_some() {
-            let start = self.span();
-            let kind = if self.peek() == Some(&TokenKind::Let) {
-                let keyword = self.bump().span;
-                let name = self.identifier()?;
-                if !names.insert(name.name.clone()) {
+    fn simple_statement(
+        &mut self,
+        names: &mut HashSet<String>,
+    ) -> Result<StatementKind, Diagnostic> {
+        let kind = if self.peek() == Some(&TokenKind::Let) {
+            let keyword = self.bump().span;
+            let name = self.identifier()?;
+            if !names.insert(name.name.clone()) {
+                return Err(Diagnostic::new(
+                    Category::Syntax,
+                    Code::DUPLICATE_DECLARATION,
+                    format!(
+                        "expected a new binding name; `{}` is already declared in this scope",
+                        name.name
+                    ),
+                    name.span,
+                ));
+            }
+            let equals = self.expect(TokenKind::Assign, "`=` and an initializer")?;
+            let initializer = self.expression()?;
+            StatementKind::Let {
+                keyword,
+                name,
+                equals,
+                initializer,
+            }
+        } else {
+            let target = self.expression()?;
+            if self.peek() == Some(&TokenKind::Assign) {
+                if !self.valid_target(target) {
                     return Err(Diagnostic::new(
                         Category::Syntax,
-                        Code::DUPLICATE_DECLARATION,
-                        format!(
-                            "expected a new binding name; `{}` is already declared in this scope",
-                            name.name
-                        ),
-                        name.span,
+                        Code::INVALID_ASSIGNMENT_TARGET,
+                        "expected a name or ordinary property/index assignment target before `=`",
+                        self.expr_span(target),
                     ));
                 }
-                let equals = self.expect(TokenKind::Assign, "`=` and an initializer")?;
-                let initializer = self.expression()?;
-                StatementKind::Let {
-                    keyword,
-                    name,
+                let equals = self.bump().span;
+                let value = self.expression()?;
+                StatementKind::Assignment {
+                    target,
                     equals,
-                    initializer,
+                    value,
                 }
             } else {
-                let target = self.expression()?;
-                if self.peek() == Some(&TokenKind::Assign) {
-                    if !self.valid_target(target) {
-                        return Err(Diagnostic::new(
-                            Category::Syntax,
-                            Code::INVALID_ASSIGNMENT_TARGET,
-                            "expected a name or ordinary property/index assignment target before `=`",
-                            self.expr_span(target),
-                        ));
-                    }
-                    let equals = self.bump().span;
-                    let value = self.expression()?;
-                    StatementKind::Assignment {
-                        target,
-                        equals,
-                        value,
-                    }
-                } else {
-                    StatementKind::Expression(target)
-                }
-            };
-            let end = self.tokens[self.pos - 1].span;
-            let terminator = if self.peek() == Some(&TokenKind::Semicolon) {
-                Some(self.bump().span)
-            } else if self.peek().is_none() {
-                None
-            } else {
-                return Err(self.expected("`;` between statements or end of input"));
-            };
-            self.program.statements.push(Statement {
-                span: cover(start, terminator.unwrap_or(end)),
-                terminator,
-                kind,
-            });
-        }
-        Ok(self.program)
+                StatementKind::Expression(target)
+            }
+        };
+        Ok(kind)
     }
 
     fn valid_target(&self, id: ExprId) -> bool {

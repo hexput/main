@@ -138,6 +138,9 @@ impl Code {
     /// A name was declared more than once in the same scope.
     pub const DUPLICATE_DECLARATION: Self = Self::new("syntax.duplicate_declaration");
 
+    /// Loop control appeared outside a lexically enclosing loop.
+    pub const LOOP_CONTROL_OUTSIDE_LOOP: Self = Self::new("syntax.loop_control_outside_loop");
+
     // --- `lexical` codes (Story 1.2) ---
 
     /// A string literal ran to a raw newline or to end of input without its closing quote.
