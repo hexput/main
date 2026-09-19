@@ -13,11 +13,12 @@ rust-version.workspace = true
 # that are about what production code can reach. A normal dependency here would — correctly — fail
 # the graph check.
 #
-# Add each crate to this list as it gains code worth testing. Twenty of the twenty-two crates are
-# still empty stubs.
+# Add each crate to this list as it gains code worth testing.
 [dev-dependencies]
 hexput-shared = { path = "../hexput-shared" }
 hexput-lexer = { path = "../hexput-lexer" }
+hexput-ast = { path = "../hexput-ast" }
+hexput-parser = { path = "../hexput-parser" }
 
 [lints]
 workspace = true

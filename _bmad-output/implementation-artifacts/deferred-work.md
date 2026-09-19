@@ -34,3 +34,7 @@ Append-only. Each entry is work identified during a build but deliberately not d
 - source_spec: `spec-1-2-tokenize-hexput-source.md`
   summary: A numeric literal that underflows, e.g. `1e-999`, silently becomes `0.0` while one that overflows is rejected.
   evidence: LANGUAGE-REFERENCE §3 rejects infinity ("a rules engine that returns NaN has failed, not computed") but says nothing about underflow, so the lexer rejects one end of the range and not the other. Every mainstream language underflows silently, which is why this was not changed unilaterally — it is a language decision for §3, not a lexer bug. Decide whether §3 should name underflow, then make the lexer match.
+
+- source_spec: `spec-1-3-parse-expressions-declarations-and-member-access.md`
+  summary: Clarify Story 1.10's empty-versus-omitted callable-name list contract and align the Epic 1 context before implementing the checker.
+  evidence: Story 1.10 calls the CLI list empty but separately exempts a caller supplying no list. The refreshed context distinguishes empty and omitted without specifying the CLI representation; a medium-impact future checker divergence is unverified while that crate remains a stub.

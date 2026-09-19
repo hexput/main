@@ -129,6 +129,15 @@ impl Code {
         self.0
     }
 
+    // --- `syntax` codes (Story 1.3) ---
+
+    /// A token or end of input does not match the expected grammar construct.
+    pub const EXPECTED_SYNTAX: Self = Self::new("syntax.expected_syntax");
+    /// Assignment requires a name or an ordinary property/index target.
+    pub const INVALID_ASSIGNMENT_TARGET: Self = Self::new("syntax.invalid_assignment_target");
+    /// A name was declared more than once in the same scope.
+    pub const DUPLICATE_DECLARATION: Self = Self::new("syntax.duplicate_declaration");
+
     // --- `lexical` codes (Story 1.2) ---
 
     /// A string literal ran to a raw newline or to end of input without its closing quote.

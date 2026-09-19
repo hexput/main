@@ -4,9 +4,8 @@
 The Architecture Spine states several rules of the shape "only X may reach Y
 directly". A crate boundary only enforces such a rule once some code actually
 imports the crate: a forbidden edge present in a manifest but not yet used
-compiles and lints clean. Every crate in this workspace is currently a stub, so
-nothing would catch a forbidden edge added today — it would surface much later,
-in an unrelated change, reading as pre-existing.
+compiles and lints clean. While a crate is still a stub, nothing imports its dependency, so an invalid edge
+would surface much later, in an unrelated change, reading as pre-existing.
 
 This script closes that gap by asserting the edges directly against the
 resolved dependency graph from `cargo metadata`, so the Spine's rules fail CI
@@ -48,6 +47,14 @@ SOLE_DEPENDENTS = [
     ("hexput-transport", {"hexput-daemon"}, "AD-1",
      "no crate but the wiring root may branch on a transport type"),
 ]
+
+
+# Pure language crates must retain exactly these production boundaries (Spine graph).
+EXACT_DEPENDENCIES = {
+    "hexput-ast": {"hexput-shared"},
+    "hexput-lexer": {"hexput-shared"},
+    "hexput-parser": {"hexput-lexer", "hexput-ast"},
+}
 
 
 def workspace_graph() -> dict[str, set[str]]:
@@ -92,6 +99,14 @@ def main() -> int:
     graph = workspace_graph()
     failures: list[str] = []
 
+    for crate, expected in EXACT_DEPENDENCIES.items():
+        actual = graph.get(crate)
+        if actual != expected:
+            failures.append(
+                f"Spine: `{crate}` must depend on exactly {sorted(expected)}; "
+                f"found {sorted(actual) if actual is not None else 'missing crate'}"
+            )
+
     for crate, forbidden, ad, why in FORBIDDEN_EDGES:
         if crate not in graph:
             failures.append(f"{ad}: crate `{crate}` is missing from the workspace")
@@ -134,7 +149,8 @@ def main() -> int:
         )
         return 1
 
-    checked = len(FORBIDDEN_EDGES) + len(REQUIRED_EDGES) + len(SOLE_DEPENDENTS)
+    checked = (len(FORBIDDEN_EDGES) + len(REQUIRED_EDGES)
+               + len(SOLE_DEPENDENTS) + len(EXACT_DEPENDENCIES))
     print(f"Crate graph OK — {checked} Architecture Decision edges asserted.")
     return 0
 

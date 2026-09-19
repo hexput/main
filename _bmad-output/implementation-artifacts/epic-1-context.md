@@ -4,11 +4,11 @@
 
 ## Goal
 
-A script author can write Hexput source and see it evaluated correctly — variables, conditionals, loops, callbacks, objects, and arrays — running it locally through a CLI eval harness with no daemon, socket, or backend involved. This makes the language testable and fuzzable on its own, ahead of any I/O, and gives the caching, Plugin, and editor-tooling epics a parser, AST, and diagnostics shape to build on rather than invent. Epic 1 owns no functional requirement outright except the static check pass itself (its policy surface belongs to the execution-policy epic); everything else here is enabling substrate. Story 1.1 (workspace scaffold) is complete — the 22-crate workspace, CI, and the crate-graph guard script already exist.
+Give script authors a locally runnable Hexput language: source is tokenized, parsed, evaluated, diagnosed, and optionally checked through a CLI without a Daemon, socket, or Backend. The language core must be independently testable and suitable for fuzzing, while providing the shared AST and diagnostics that later execution modes and editor tooling consume. Hexput targets short, frequently invoked rules, including rules written by non-engineers; predictable behavior and clear failures matter more than general-purpose language breadth.
 
 ## Stories
 
-- Story 1.1: Project scaffold and pinned toolchain — **done**
+- Story 1.1: Project scaffold and pinned toolchain
 - Story 1.2: Tokenize Hexput source
 - Story 1.3: Parse expressions, declarations, and member access
 - Story 1.4: Parse conditionals and loops
@@ -21,39 +21,27 @@ A script author can write Hexput source and see it evaluated correctly — varia
 
 ## Requirements & Constraints
 
-- **The language reference document is normative.** `_bmad-output/planning-artifacts/language/LANGUAGE-REFERENCE.md` defines the language; where a story and that document disagree, the document wins. Its `[DECISION]` markers are approved provenance, not open questions — do not re-litigate them. Read the relevant section before implementing any story from 1.2 onward.
-- **Everything carries a span.** Every token, every AST node, and every error records byte offset, line, and column. Discarding comments and whitespace must not shift the recorded positions of surrounding tokens.
-- **Nothing panics on bad input.** Lexical, parse, and runtime failures are returned as structured errors; a malformed script must never abort the process, and unbounded recursion must hit a call-depth limit rather than overflow the host stack. This is the reliability property the daemon later depends on for "a bad script never takes down the daemon".
-- **One error/finding shape, everywhere.** Category, stable code, human message, and source span — structured fields, not just formatted text — so the CLI, a daemon error response, and a language server render the same failure identically. Terminal rendering additionally shows the offending source line with the span marked, without truncating location info on multi-line spans.
-- **The check pass is advisory and pure.** Parsed AST + callable-name set + active policy in, findings out. It never executes the script, holds no state between calls, and never grants, denies, or substitutes for a capability check or budget charge. An empty callable-name set (the CLI case) means host-call findings are simply not raised — not that every call is flagged. Warning-severity findings (e.g. unused local) can never reject a script, in any mode; the result must distinguish "clean" from "warnings only".
-- **CLI behavior:** eval prints the result value and exits zero; errors render to stderr with non-zero exit. Check exits non-zero only when an error-severity finding exists, and executes no part of the script. Input variables supplied on the command line bind as the script's starting variables.
-- Memory safety is a security property here: `unsafe` in `hexput-lexer`, `hexput-parser`, `hexput-interpreter`, or `hexput-exec` fails CI unless it carries a reviewed `SAFETY:` justification.
+- The language reference is normative when story wording conflicts with it. Its decision markers record approved choices, not unresolved questions. Do not borrow JavaScript semantics where Hexput specifies different behavior.
+- UTF-8 source supports Unicode string content but only ASCII identifiers. Semicolons separate statements; the last statement in a block or file may omit its terminator. String literals can span lines. Reserved words cannot serve as identifiers, bare object keys, or parameter names.
+- Preserve precise source locations throughout tokens, AST nodes, and failures. Errors and findings share a machine-readable category, stable code, message, and structured span; terminal rendering must retain multiline location information and expose the offending source. Editor clients must not need to parse formatted text.
+- Malformed input and script failures must produce defined errors rather than panics or host stack overflow. Recursion is permitted but bounded. Non-finite numeric results and division by zero fail explicitly. Memory safety in the parser and evaluator is a security property; unsafe Rust requires explicit review and a justified safety explanation.
+- The language is the permanent trust boundary. There are no ambient filesystem, network, environment, process, module, or import facilities, and no built-in standard library. Host interaction later uses Registered Functions exclusively; do not add a second host-access path to make local evaluation convenient.
+- Static checking never executes code, infers types across bindings, or substitutes for runtime Capability and Resource Budget enforcement. It checks structurally decidable mistakes using caller-supplied names and policy; unused locals remain warnings. CLI checking returns failure only for error-severity findings.
+- The standalone CLI accepts starting variables, prints successful results, and renders failures to stderr with a nonzero exit code. A successful check and a check with warnings remain distinguishable.
 
 ## Technical Decisions
 
-**Crate landing.** AST node types → `hexput-ast` (data only, no logic); tokenizer → `hexput-lexer` (1.2); parser → `hexput-parser` (1.3–1.5); tree-walking evaluator → `hexput-interpreter` (1.6–1.7); the shared diagnostic types → `hexput-shared::diagnostics` (1.8); static check → `hexput-check` (1.10); eval/check command logic → `hexput-cli-core`, invoked by the thin `hexput` binary in `hexput-bin` (1.9–1.10). No logic belongs in `hexput-bin` beyond argument parsing and a call into a library crate.
-
-**Dependency edges are compiler-enforced, not conventions.** `hexput-ast` and `hexput-lexer` depend on `hexput-shared` only; `hexput-parser` on `hexput-lexer` + `hexput-ast`; `hexput-interpreter` on `hexput-ast` only (no host reach); `hexput-check` on `hexput-ast` + `hexput-shared` only — never `hexput-interpreter`, `hexput-rpc`, or `hexput-enforce`, so it structurally cannot execute or reach the host; `hexput-cli-core` on lexer/parser/interpreter/check. `scripts/check-crate-graph.py` guards the graph in CI; adding a forbidden edge must be a build failure, not a review comment.
-
-**Language semantics most likely to be implemented wrong** (all normative; full detail in the reference):
-
-- One numeric type (IEEE-754 double). Division by zero, `NaN`, and infinity are runtime `arithmetic` errors, never non-finite values.
-- Falsy is exactly five things: `null`, `false`, `0`, `""`, and an **empty array or empty object** (Python-style, not JavaScript). `&&`/`||` return an operand, not a `bool`, and short-circuit.
-- Implicit conversion is deliberately narrow: `+` concatenates when either side is a string, otherwise converts to number; other arithmetic converts to number and raises `type` on a non-numeric string; stringifying an array or object is a `type` error (no `"[object Object]"`).
-- Equality is narrower than JavaScript's: same-type compares directly (arrays/objects **by identity**, never structurally), number-vs-string converts the string, and every other cross-type comparison is `false` — so `0 == false` and `[] == false` are both `false`. Truthiness and equality are separate questions.
-- Absent data is `null`: reading a missing object key or an out-of-range array index yields `null`, and writing a missing key creates it. Two cases stay `reference` errors because they mean the script is wrong: reading an undeclared identifier, and property access on `null` without `?.`.
-- `?.` short-circuits the **rest of the chain** (`a?.b.c.d` is `null` when `a` is `null`) and suppresses only `null` — never a `type` error. There is no optional call form.
-- Scoping is lexical and block-level; shadowing is allowed, re-declaring in the same block is a compile-time error, and assignment to an undeclared name is a runtime error (no implicit globals). Closures capture by reference. Wrong argument count is an `arity` error — no padding, no variadics. A function reaching its end without `return` yields `null`.
-- Statement terminator is `;`, omittable only for the last statement in a block or file. Comments are `//` and non-nesting `/* */`. Identifiers are ASCII-only; string literals are full UTF-8 with `\n \t \r \\ \" \' \u{...}` escapes and no interpolation. Reserved words (including `plugin`) may not be used as identifiers, bare object keys, or parameter names.
-- There is **no standard library at all** — not `len()`, not `push()`. Everything beyond the operators comes from host-registered functions, which appear in the grammar as ordinary call expressions. There is no import/module/filesystem/network/process syntax; the absence is structural.
-- Deliberately absent from v2: `try`/`catch`, `throw`, classes, `this`, string interpolation, regex, bitwise ops, ternary, switch, generators, in-script `async`/`await`.
-
-**Error categories** are a fixed, closed set: `lexical`, `syntax`, `type`, `reference`, `arity`, `arithmetic`, `depth`, `capability`, `budget`, `policy`. The last three are raised by later epics but belong to the same shape defined here.
+- Keep AST data, lexing, parsing, evaluation, checking, and CLI behavior behind separate crate boundaries. AST contains data rather than parsing or evaluation logic. The interpreter is a tree-walking evaluator without host reach. The only binary-producing crate contains thin entry points that hand off to libraries.
+- Respect the prescribed dependency graph: AST and lexer may use shared types; parser depends on lexer and AST; interpreter depends on AST; checker depends on AST and shared types, never interpreter, RPC, or enforcement. CLI composes the language libraries. Shared diagnostics define the common error shape instead of parallel subsystem-specific formats.
+- Use the pinned Rust 1.98.1 toolchain and 2024 edition. Centralize external dependency versions at workspace level. Architecture boundaries must remain enforceable as dependencies, not just naming conventions.
+- Values include null, booleans, finite double-precision numbers, strings, ordered arrays, insertion-ordered objects, and first-class functions. Functions capture lexical environments by reference. Local bindings are block scoped; inner blocks may shadow outer ones, but duplicate declarations within a block are syntax errors.
+- Preserve operator precedence and left associativity of binary operators. Calls and access bind tighter than unary operators, which bind tighter than binary operators. Conditions use truthiness, including falsy empty collections; logical operators short-circuit and return an operand. Numeric conversions, concatenation, and equality follow the language's explicit conversion rules rather than broad coercion.
+- Missing object keys and out-of-range array reads yield null; undeclared identifiers and ordinary access on null remain reference errors. Optional property/index access suppresses null access only and short-circuits the remaining chain. There is no optional-call syntax.
+- The checker exposes one pure, stateless entry point over an AST, callable-name information, and policy. A missing callable-name list differs from an explicitly empty list. Later submission paths invoke checking once before execution or registration, never on every Cached Execution.
 
 ## Cross-Story Dependencies
 
-- 1.2 → 1.3 → 1.4/1.5 → 1.6/1.7 → 1.9 are strictly sequential; 1.10 needs the AST from 1.3–1.5 and the CLI from 1.9.
-- Story 1.8's diagnostic types in `hexput-shared::diagnostics` are consumed retroactively by 1.2–1.7 — decide their shape early rather than writing ad-hoc error enums per crate and converting later. The same types are reused by the daemon's wire error responses and by the language server, so they must be structured and serializable-friendly.
-- Plugin syntax (`plugin { }` block, `@Global`, `@Event` annotations) is a **later epic's** extension of this grammar, not Epic 1's work — but `plugin` is already a reserved word here, and the parser should be shaped so those additions don't require restructuring.
-- The check pass's plugin-specific findings and its `off`/`warn`/`error` mode plumbing land in later epics; Epic 1 delivers the pass and its script-level findings only.
-- The tree-sitter grammar and language server describe this same language and reuse this parser and check pass — they must not reimplement the grammar.
+- Scaffold precedes lexing; expression parsing establishes the AST extended by control-flow and function/collection parsing. Evaluation consumes that shared representation. Diagnostic structure must remain compatible throughout, even before terminal rendering is completed.
+- CLI evaluation composes the parser, evaluator, and diagnostics; CLI checking adds the pure checker. Keep these usable independently of daemon infrastructure.
+- Later epics reuse this core for Direct Execution, AST Cache reuse, and Plugin execution. Plugin-specific syntax and persistent Global Variables belong to Epic 6; do not expand ordinary script work into Plugin registration or lifecycle behavior.
+- Epic 3 supplies the Backend Config modes and per-execution overrides for checking and language-feature policy. Epic 9 consumes parser/checker diagnostics without depending on the interpreter or daemon. Preserve reusable structured outputs for these consumers.

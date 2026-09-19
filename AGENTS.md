@@ -17,9 +17,9 @@ BMAD mirrors this — `_bmad/custom/config.user.toml` pins `communication_langua
 
 ## Project Status
 
-_Last updated: 2026-09-18._
+_Last updated: 2026-09-19._
 
-**Epic 1 Stories 1.1 and 1.2 are done; Stories 1.3–1.10 are `backlog`.** The Cargo workspace exists and builds: 23 crates under `crates/`. `hexput-lexer` tokenizes the language and `hexput-shared::diagnostics` holds the workspace-wide error shape; the other 21 crates are still compiling stubs whose `lib.rs` doc comments state their responsibility and binding ADs. The parser, interpreter, check pass and every daemon crate are empty. This is a from-scratch v2 rewrite; there is no v1 code in this repository to reference or ratify conventions from.
+**Epic 1 Stories 1.1–1.3 are done; Stories 1.4–1.10 are `backlog`.** The Cargo workspace has 23 crates under `crates/`. `hexput-lexer` tokenizes source; `hexput-shared::diagnostics` defines shared errors; `hexput-ast` holds owned, spanned syntax in a flat expression arena; `hexput-parser::parse` parses scalar expressions, declarations, assignments, and ordinary/optional property/index access. Tests live in `hexput-tests`. Blocks/control flow, functions, and collection literals remain for Stories 1.4–1.5. The interpreter, check pass, and daemon crates remain stubs. This is a from-scratch v2 rewrite; there is no v1 code in this repository.
 
 See [Build, Lint, Test](#build-lint-test) below for the commands that actually work today.
 
@@ -34,7 +34,7 @@ Planning is complete and final:
 
 Three amendments landed after the PRD and spine were first marked final, all recorded in their `.memlog.md` files: **FR-26** (optional, Backend-configured static check before execution), **AD-8** with the `hexput-check` crate, and — largest of the three — the **crate split**: the Structural Seed is no longer one crate with an internal module tree but a Cargo workspace (22 crates at the time, plus `hexput-tests` since), one crate per module plus language (`hexput-ast`/`hexput-lexer`/`hexput-parser`/`hexput-interpreter`) and tooling crates, every crate a `lib`, with exactly one binary-producing crate (`hexput-bin`). Several Architecture Decisions (AD-1, AD-3, AD-4, AD-5, AD-8) are now compiler-enforced by which crate depends on which — see the spine's "Crate dependency graph" subsection for the exact mapping before writing any crate's `Cargo.toml`.
 
-**Next step:** implement Epic 1 Story 1.3 (parse expressions, declarations and member access, landing in `hexput-parser`) via `bmad-build`. Keep this section honest as stories land.
+**Next step:** implement Story 1.4 (parse conditionals and loops) via `bmad-build`. Keep this section honest as stories land.
 
 ## Build, Lint, Test
 
