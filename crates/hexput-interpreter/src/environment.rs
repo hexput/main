@@ -1,75 +1,84 @@
-//! Lexical, block-level scopes (§5) as an `Arc`-linked chain, so Story 1.7 closures can capture
-//! a scope by reference and see later mutations of its bindings.
+//! Lexical, block-level scopes (§5) as heap-resident records linked by parent handle, so Story
+//! 1.7 closures can capture a scope by handle and see later mutations of its bindings — and a
+//! closure that captures its own scope forms a cycle the per-execution heap frees for free.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::Value;
+use crate::heap::{Heap, RtValue, Slot, SlotId};
 
-pub(crate) struct Scope {
-    bindings: Mutex<HashMap<String, Value>>,
-    parent: Option<Arc<Scope>>,
+pub(crate) struct ScopeRecord {
+    bindings: HashMap<String, RtValue>,
+    parent: Option<SlotId>,
 }
 
-impl Scope {
-    pub(crate) fn root() -> Arc<Self> {
-        Arc::new(Self {
-            bindings: Mutex::new(HashMap::new()),
-            parent: None,
-        })
+impl Heap {
+    /// Allocate an empty scope nested in `parent` (or a root scope).
+    pub(crate) fn push_scope(&mut self, parent: Option<SlotId>) -> SlotId {
+        self.alloc(Slot::Scope(ScopeRecord {
+            bindings: HashMap::new(),
+            parent,
+        }))
     }
 
-    pub(crate) fn child(parent: &Arc<Self>) -> Arc<Self> {
-        Arc::new(Self {
-            bindings: Mutex::new(HashMap::new()),
-            parent: Some(Arc::clone(parent)),
-        })
-    }
-
-    fn bindings(&self) -> MutexGuard<'_, HashMap<String, Value>> {
-        self.bindings.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Bind `name` in this scope. The parser has already rejected same-block redeclaration.
-    pub(crate) fn declare(&self, name: &str, value: Value) {
-        self.bindings().insert(name.to_owned(), value);
-    }
-
-    /// Read the innermost binding of `name`, walking outward iteratively.
-    pub(crate) fn lookup(&self, name: &str) -> Option<Value> {
-        let mut scope = self;
-        loop {
-            if let Some(value) = scope.bindings().get(name) {
-                return Some(value.clone());
-            }
-            scope = scope.parent.as_deref()?;
+    fn scope(&self, id: SlotId) -> Option<&ScopeRecord> {
+        match self.slot(id) {
+            Some(Slot::Scope(record)) => Some(record),
+            _ => None,
         }
+    }
+
+    fn scope_mut(&mut self, id: SlotId) -> Option<&mut ScopeRecord> {
+        match self.slot_mut(id) {
+            Some(Slot::Scope(record)) => Some(record),
+            _ => None,
+        }
+    }
+
+    /// Bind `name` in `scope`. The parser has already rejected same-block redeclaration.
+    pub(crate) fn declare(&mut self, scope: SlotId, name: &str, value: RtValue) {
+        if let Some(record) = self.scope_mut(scope) {
+            record.bindings.insert(name.to_owned(), value);
+        }
+    }
+
+    /// The innermost scope, starting at `scope` and walking outward iteratively, that binds
+    /// `name`.
+    fn resolve(&self, mut scope: SlotId, name: &str) -> Option<SlotId> {
+        loop {
+            let record = self.scope(scope)?;
+            if record.bindings.contains_key(name) {
+                return Some(scope);
+            }
+            scope = record.parent?;
+        }
+    }
+
+    /// Read the innermost binding of `name`.
+    pub(crate) fn lookup(&self, scope: SlotId, name: &str) -> Option<RtValue> {
+        let owner = self.resolve(scope, name)?;
+        self.scope(owner)?.bindings.get(name).cloned()
     }
 
     /// Overwrite the innermost binding of `name`. Returns the value back when no scope declares
     /// it — there is no implicit global creation (§5).
-    pub(crate) fn assign(&self, name: &str, value: Value) -> Result<(), Value> {
-        let mut scope = self;
-        loop {
-            if let Some(slot) = scope.bindings().get_mut(name) {
+    pub(crate) fn assign(
+        &mut self,
+        scope: SlotId,
+        name: &str,
+        value: RtValue,
+    ) -> Result<(), RtValue> {
+        let Some(owner) = self.resolve(scope, name) else {
+            return Err(value);
+        };
+        match self
+            .scope_mut(owner)
+            .and_then(|record| record.bindings.get_mut(name))
+        {
+            Some(slot) => {
                 *slot = value;
-                return Ok(());
+                Ok(())
             }
-            match scope.parent.as_deref() {
-                Some(parent) => scope = parent,
-                None => return Err(value),
-            }
-        }
-    }
-}
-
-// A long chain of otherwise-unreferenced scopes (an evaluation that failed 12,000 blocks deep)
-// would drop recursively through `parent`; unlink it iteratively instead.
-impl Drop for Scope {
-    fn drop(&mut self) {
-        let mut parent = self.parent.take();
-        while let Some(scope) = parent {
-            parent = Arc::into_inner(scope).and_then(|mut owned| owned.parent.take());
+            None => Err(value),
         }
     }
 }

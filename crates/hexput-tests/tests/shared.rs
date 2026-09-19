@@ -38,6 +38,7 @@ fn runtime_codes_are_stable_and_distinct() {
             Code::INVALID_PROPERTY_ACCESS,
             "type.invalid_property_access",
         ),
+        (Code::CYCLIC_RESULT, "type.cyclic_result"),
         (
             Code::UNDECLARED_IDENTIFIER,
             "reference.undeclared_identifier",

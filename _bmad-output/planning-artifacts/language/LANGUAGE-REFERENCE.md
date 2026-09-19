@@ -199,7 +199,7 @@ Every failure carries a category, a stable code, a message, and a source span (E
 | --- | --- | --- |
 | `lexical` | Unterminated string, unknown character | Lex time |
 | `syntax` | Malformed construct, `break` outside a loop, duplicate `let` | Parse time |
-| `type` | A conversion §4.2 does not perform — arithmetic on a non-numeric string, stringifying a collection, a collection in a numeric operand | Runtime |
+| `type` | A conversion §4.2 does not perform — arithmetic on a non-numeric string, stringifying a collection, a collection in a numeric operand; returning a value that is, or contains, a value referring back to itself | Runtime |
 | `reference` | Undeclared identifier, property access on `null`, an array write outside the appendable range | Runtime |
 | `arity` | Wrong argument count | Runtime |
 | `arithmetic` | Division by zero, non-finite result | Runtime |
@@ -215,6 +215,8 @@ Every failure carries a category, a stable code, a message, and a source span (E
 **[DECISION, 2026-09-19] Array writes.** `a[i] = v` replaces an existing element, and `a[len] = v` (exactly the length) appends. Any other out-of-range, negative, or fractional index write is a `reference` error (`reference.index_out_of_range`) — a write cannot be "absent data". Reads outside the range, including negative or fractional indices, still yield `null`.
 
 **[DECISION, 2026-09-19] Object indices are strings.** A number (or any non-string) index on an object is a `type` error, as is any index on a `string`, `number`, or `bool`, and any `.property` on a value that is not an object.
+
+**[DECISION, 2026-09-19] A Script result cannot contain a cycle.** The Script result leaves the execution as a plain tree of values, so returning a value whose reachable graph contains a cycle (`let a = []; a[0] = a; return a;`) is a `type` error (`type.cyclic_result`) pointing at the returned expression. Cycles a Script builds but does not return are fine. A value reached twice without a cycle (`let x = [1]; return [x, x];`) returns as two equal copies — identity (§4.2) exists only inside the execution.
 
 **[DECISION] Two cases stay `reference` errors**, because each means the script is wrong rather than the data being absent:
 

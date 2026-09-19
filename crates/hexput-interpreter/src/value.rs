@@ -1,20 +1,24 @@
-//! Runtime values (LANGUAGE-REFERENCE §3).
+//! The public Script result (LANGUAGE-REFERENCE §3), detached from the execution that made it.
 //!
-//! Collections are shared, mutable, and compared by identity, so they are `Arc<Mutex<…>>`: every
-//! clone of a [`Value::Array`] is the same array. The mutex keeps [`Value`] `Send` so a future
-//! Executor can hold a suspended evaluation across an `.await`; every critical section is short,
-//! synchronous, never nested, and recovers from poisoning instead of panicking.
+//! While a Script runs, its collections live in the execution's heap and are addressed by
+//! handle (see `heap.rs`). When the Script returns, the result is copied out into these owned,
+//! immutable types and the heap is dropped with everything in it. A [`Value`] therefore
+//! references no execution state, is `Send + Sync`, and exposes no identity: collection
+//! identity (`==` on arrays and objects) exists only inside the execution.
+//!
+//! Detached collections share storage through `Arc` where the execution's result reached the
+//! same collection twice (`[x, x]`). That is unobservable — the result is immutable and has no
+//! identity — so it reads exactly like separate copies while keeping detachment linear.
 //!
 //! `Value` deliberately has no `PartialEq`: structural equality is not language equality
-//! (§4.2 compares collections by identity and some cross-type pairs by conversion). Use
-//! [`Value::equals`] for the language's `==`.
+//! (§4.2), and the result type should not suggest otherwise.
 
 use core::fmt;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-/// One Hexput value.
+/// One detached Hexput value.
 ///
 /// `#[non_exhaustive]` because Story 1.7 adds functions as values.
 #[derive(Clone)]
@@ -53,25 +57,6 @@ impl Value {
             Self::String(s) => !s.is_empty(),
             Self::Array(a) => !a.is_empty(),
             Self::Object(o) => !o.is_empty(),
-        }
-    }
-
-    /// §4.2 language equality (`==`). Same type compares directly, collections by identity;
-    /// number vs string converts the string (a non-numeric string is simply unequal); every
-    /// other cross-type pair is unequal.
-    #[must_use]
-    pub fn equals(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Null, Self::Null) => true,
-            (Self::Bool(a), Self::Bool(b)) => a == b,
-            (Self::Number(a), Self::Number(b)) => a == b,
-            (Self::String(a), Self::String(b)) => a == b,
-            (Self::Array(a), Self::Array(b)) => a.ptr_eq(b),
-            (Self::Object(a), Self::Object(b)) => a.ptr_eq(b),
-            (Self::Number(n), Self::String(s)) | (Self::String(s), Self::Number(n)) => {
-                crate::convert::parse_number(s) == Some(*n)
-            }
-            _ => false,
         }
     }
 
@@ -122,7 +107,7 @@ impl Value {
 }
 
 /// Shallow on purpose: collections print their length, never their contents, so formatting a
-/// deeply nested or self-containing value cannot recurse or loop.
+/// deeply nested value cannot recurse.
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -136,119 +121,78 @@ impl fmt::Debug for Value {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// A shared, ordered array. Clones alias the same storage.
+/// A detached, immutable, ordered array.
 #[derive(Clone)]
-pub struct Array(Arc<Mutex<Elements>>);
+pub struct Array(Arc<Elements>);
 
-/// A shared, insertion-ordered object with string keys. Clones alias the same storage.
+/// A detached, immutable, insertion-ordered object with string keys.
 #[derive(Clone)]
-pub struct Object(Arc<Mutex<Entries>>);
+pub struct Object(Arc<Entries>);
 
 struct Elements(Vec<Value>);
 struct Entries(IndexMap<Arc<str>, Value>);
 
 impl Array {
     pub(crate) fn new(items: Vec<Value>) -> Self {
-        Self(Arc::new(Mutex::new(Elements(items))))
+        Self(Arc::new(Elements(items)))
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        lock(&self.0).0.len()
+        self.0.0.len()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.0.0.is_empty()
     }
 
     /// The element at `index`, if present.
     #[must_use]
-    pub fn get(&self, index: usize) -> Option<Value> {
-        lock(&self.0).0.get(index).cloned()
+    pub fn get(&self, index: usize) -> Option<&Value> {
+        self.0.0.get(index)
     }
 
-    /// A snapshot of the elements; later mutation of the array does not affect it.
+    /// The elements, in order.
     #[must_use]
     pub fn to_vec(&self) -> Vec<Value> {
-        lock(&self.0).0.clone()
-    }
-
-    /// Whether both handles are the same array (language identity).
-    #[must_use]
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-
-    /// Set `index`, or append when `index` is exactly the length. Returns `false` otherwise.
-    pub(crate) fn store(&self, index: usize, value: Value) -> bool {
-        let mut elements = lock(&self.0);
-        let items = &mut elements.0;
-        if let Some(slot) = items.get_mut(index) {
-            *slot = value;
-            true
-        } else if index == items.len() {
-            items.push(value);
-            true
-        } else {
-            false
-        }
+        self.0.0.clone()
     }
 }
 
 impl Object {
     pub(crate) fn new(entries: IndexMap<Arc<str>, Value>) -> Self {
-        Self(Arc::new(Mutex::new(Entries(entries))))
+        Self(Arc::new(Entries(entries)))
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        lock(&self.0).0.len()
+        self.0.0.len()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.0.0.is_empty()
     }
 
     /// The value under `key`, if present.
     #[must_use]
-    pub fn get(&self, key: &str) -> Option<Value> {
-        lock(&self.0).0.get(key).cloned()
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.0.0.get(key)
     }
 
-    /// A snapshot of the entries in insertion order.
+    /// The entries in insertion order.
     #[must_use]
     pub fn entries(&self) -> Vec<(Arc<str>, Value)> {
-        lock(&self.0)
+        self.0
             .0
             .iter()
             .map(|(k, v)| (Arc::clone(k), v.clone()))
             .collect()
     }
-
-    /// Whether both handles are the same object (language identity).
-    #[must_use]
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-
-    /// Replace an existing key in place, or append a new one at the end.
-    pub(crate) fn store(&self, key: &str, value: Value) {
-        let mut entries = lock(&self.0);
-        if let Some(slot) = entries.0.get_mut(key) {
-            *slot = value;
-        } else {
-            entries.0.insert(Arc::from(key), value);
-        }
-    }
 }
 
-// Dropping a deeply nested collection must not recurse once per level: each collection that is
+// Dropping a deeply nested result must not recurse once per level: each collection that is
 // about to be freed hands its children to a flat work list instead.
 impl Drop for Elements {
     fn drop(&mut self) {
@@ -269,14 +213,12 @@ fn drop_flat(mut pending: Vec<Value>) {
             Value::Array(Array(shared)) => {
                 // `into_inner` succeeds for exactly one of the last handles, so the storage is
                 // emptied here and then dropped shallowly.
-                if let Some(mutex) = Arc::into_inner(shared) {
-                    let mut elements = mutex.into_inner().unwrap_or_else(PoisonError::into_inner);
+                if let Some(mut elements) = Arc::into_inner(shared) {
                     pending.append(&mut elements.0);
                 }
             }
             Value::Object(Object(shared)) => {
-                if let Some(mutex) = Arc::into_inner(shared) {
-                    let mut entries = mutex.into_inner().unwrap_or_else(PoisonError::into_inner);
+                if let Some(mut entries) = Arc::into_inner(shared) {
                     pending.extend(entries.0.drain(..).map(|(_, v)| v));
                 }
             }

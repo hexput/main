@@ -650,3 +650,153 @@ fn short_token_combinations_do_not_panic() {
         }
     }
 }
+
+/// The numbers of a detached array, in order.
+fn numbers(value: &Value) -> Vec<f64> {
+    value
+        .as_array()
+        .expect("array")
+        .to_vec()
+        .iter()
+        .filter_map(Value::as_number)
+        .collect()
+}
+
+#[test]
+fn cycles_that_are_not_returned_are_fine() {
+    assert_eq!(num("let a = []; a[0] = a; return 1;"), 1.0);
+    assert_eq!(num("let o = {}; o.me = o; return 2;"), 2.0);
+    assert!(boolean(
+        "let a = []; let o = {a: a}; a[0] = o; return a[0].a == a;"
+    ));
+    // A cycle elsewhere in the heap does not taint an acyclic result.
+    let result = ok("let a = []; a[0] = a; let b = [1, 2]; return b;");
+    assert_eq!(numbers(&result), [1.0, 2.0]);
+    // Returning an element that is not itself on a cycle is fine.
+    assert_eq!(num("let a = [5]; a[1] = a; return a[0];"), 5.0);
+}
+
+#[test]
+fn returning_a_cycle_is_a_type_error_on_the_returned_expression() {
+    for (source, spanned) in [
+        ("let a = []; a[0] = a; return a;", "a"),
+        ("let a = []; a[0] = a; return [1, a];", "[1, a]"),
+        ("let o = {}; o.me = o; return o;", "o"),
+        ("let o = {}; o.me = o; return {x: {y: o}};", "{x: {y: o}}"),
+        ("let a = []; let o = {a: a}; a[0] = o; return (a);", "(a)"),
+        (
+            "let a = []; let b = [a]; let c = [b]; a[0] = c; { return [[c]]; }",
+            "[[c]]",
+        ),
+    ] {
+        let e = assert_error(source, Category::Type, Code::CYCLIC_RESULT, spanned);
+        assert!(e.message.contains("refers back to itself"), "{source}: {e}");
+    }
+    // The cycle sits below the returned root: the message must not claim the root itself is
+    // self-containing, only that it contains such a value.
+    let e = err("let a = []; a[0] = a; return [1, a];");
+    assert_eq!(
+        e.message,
+        "cannot return this array: it contains a value that refers back to itself, and a \
+         Script result must be a finite tree of values"
+    );
+}
+
+#[test]
+fn shared_results_detach_as_copies() {
+    let result = ok("let x = [1]; return [x, x];");
+    let items = result.as_array().expect("array").to_vec();
+    assert_eq!(items.len(), 2);
+    for item in &items {
+        assert_eq!(numbers(item), [1.0]);
+    }
+    // Detaching reads the state at `return`, through every alias.
+    let result = ok("let x = [1]; let y = {p: x, q: [x]}; x[1] = 2; return y;");
+    let object = result.as_object().expect("object");
+    assert_eq!(numbers(object.get("p").expect("p")), [1.0, 2.0]);
+    let q = object.get("q").expect("q").as_array().expect("array");
+    assert_eq!(numbers(q.get(0).expect("q[0]")), [1.0, 2.0]);
+    // Identity is still observable inside the execution.
+    assert!(boolean("let x = [1]; let y = [x, x]; return y[0] == y[1];"));
+    // Shared structure is detached once: 2^40 paths, 41 collections.
+    let doubling = format!("let a = [];{} return a;", " a = [a, a];".repeat(40));
+    let mut value = ok(&doubling);
+    let mut depth = 0;
+    while let Some(array) = value.as_array() {
+        assert_eq!(array.len(), if depth == 40 { 0 } else { 2 });
+        let Some(next) = array.get(1).cloned() else {
+            break;
+        };
+        value = next;
+        depth += 1;
+    }
+    assert_eq!(depth, 40);
+}
+
+#[test]
+fn deep_results_detach_and_drop_without_recursion() {
+    let n = 12_000;
+    let arrays = format!("return {}1{};", "[".repeat(n), "]".repeat(n));
+    let mut value = ok(&arrays);
+    let mut depth = 0;
+    loop {
+        let Some(next) = value.as_array().and_then(|a| a.get(0)).cloned() else {
+            break;
+        };
+        value = next;
+        depth += 1;
+    }
+    assert_eq!(depth, n);
+    assert_eq!(value.as_number(), Some(1.0));
+    let objects = format!("return {}null{};", "{b:".repeat(n), "}".repeat(n));
+    drop(ok(&objects));
+    // Built by assignment, so the heap holds it as n separate collections.
+    let built = format!(
+        "let o = {{}}; let top = o;{} return top;",
+        " o.b = {}; o = o.b;".repeat(n)
+    );
+    let result = ok(&built);
+    assert_eq!(
+        result.as_object().map(hexput_interpreter::Object::len),
+        Some(1)
+    );
+    drop(result);
+    // A cycle at the bottom of a deep structure is still found, without recursion.
+    let deep_cycle = format!(
+        "let o = {{}}; let top = o;{} o.b = top; return top;",
+        " o.b = {}; o = o.b;".repeat(n)
+    );
+    assert_eq!(err(&deep_cycle).code, Code::CYCLIC_RESULT);
+}
+
+#[test]
+fn failures_after_allocating_report_the_unchanged_diagnostic() {
+    assert_error(
+        "let a = [1]; a[1] = a; let o = {a: a}; return nope;",
+        Category::Reference,
+        Code::UNDECLARED_IDENTIFIER,
+        "nope",
+    );
+    assert_error(
+        "let a = [[1], {}]; a[5] = 0;",
+        Category::Reference,
+        Code::INDEX_OUT_OF_RANGE,
+        "5",
+    );
+}
+
+#[test]
+fn many_blocks_evaluate() {
+    let n = 12_000;
+    let siblings = format!(
+        "let x = 0;{} return x;",
+        " { let y = x; x = y + 1; };".repeat(n)
+    );
+    assert_eq!(num(&siblings), n as f64);
+    let nested = format!(
+        "let x = 0; {}{} return x;",
+        "{ x = x + 1; ".repeat(n),
+        "};".repeat(n)
+    );
+    assert_eq!(num(&nested), n as f64);
+}

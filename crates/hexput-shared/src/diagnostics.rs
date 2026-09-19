@@ -67,8 +67,8 @@ pub enum Category {
     /// Malformed construct, `break` outside a loop, duplicate `let`. Detected at parse time.
     Syntax,
     /// A conversion §4.2 does not perform, an index of the wrong type for its receiver (or any
-    /// index on a non-collection), or property access on a value that is not an object.
-    /// Detected at runtime.
+    /// index on a non-collection), property access on a value that is not an object, or a
+    /// Script result that contains a value referring back to itself. Detected at runtime.
     Type,
     /// Undeclared identifier, property access on `null`, an array write outside the one
     /// appendable position. Detected at runtime. Reading outside an array's range is not an
@@ -175,6 +175,11 @@ impl Code {
     pub const INVALID_INDEX: Self = Self::new("type.invalid_index");
     /// `.name` on a value that is not an object (number, bool, string, array). Category `type`.
     pub const INVALID_PROPERTY_ACCESS: Self = Self::new("type.invalid_property_access");
+    /// A Script returned a value that is, or contains, a value referring back to itself
+    /// (`a[0] = a; return a;` or `return [1, a];`): its reachable graph has a cycle and so no
+    /// finite detached form. Cycles built but not returned are fine. Category
+    /// `type`.
+    pub const CYCLIC_RESULT: Self = Self::new("type.cyclic_result");
     /// A read of a name no enclosing scope declares. Category `reference`.
     pub const UNDECLARED_IDENTIFIER: Self = Self::new("reference.undeclared_identifier");
     /// An assignment to a name no enclosing scope declares — there are no implicit globals.
